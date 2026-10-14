@@ -45,8 +45,32 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   onCancel,
   onOpenSettings,
 }) => {
+  const standardGrades = [
+    'Klasse 5',
+    'Klasse 6',
+    'Klasse 7',
+    'Klasse 8',
+    'Klasse 9',
+    'Klasse 10',
+    'Oberstufe (EF)',
+    'Oberstufe (Q1)',
+    'Oberstufe (Q2)',
+    'Berufsschule / BBS',
+    'Grundschule',
+    'Übergreifend',
+  ];
+
+  const initialGrade = initialItem?.grade_level || 'Klasse 8';
+  const isPresetGrade = standardGrades.includes(initialGrade);
+
   const [title, setTitle] = useState(initialItem?.title || '');
   const [subject, setSubject] = useState(initialItem?.subject || 'Mathematik');
+  const [gradeLevel, setGradeLevel] = useState(
+    isPresetGrade ? initialGrade : initialItem?.grade_level ? 'custom' : 'Klasse 8'
+  );
+  const [customGradeLevel, setCustomGradeLevel] = useState(
+    !isPresetGrade && initialItem?.grade_level ? initialItem.grade_level : ''
+  );
   const [taskContext, setTaskContext] = useState(initialItem?.task_context || '');
   const [taskImage, setTaskImage] = useState<string | undefined>(initialItem?.task_image);
   const [hints, setHints] = useState<Hint[]>(
@@ -283,10 +307,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       return;
     }
 
+    const resolvedGrade = (gradeLevel === 'custom' ? customGradeLevel : gradeLevel).trim();
+
     const item: Lernhilfe = {
       id: initialItem?.id || 'lh-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
       title: title.trim(),
       subject: subject.trim(),
+      grade_level: resolvedGrade || undefined,
       task_context: taskContext.trim(),
       task_image: taskImage,
       hints,
@@ -390,8 +417,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         /* Main Editor Form */
         <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
           {/* Metadata Section: Mobile-optimized, non-squished layout */}
-          <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
-            <div className="sm:col-span-2 space-y-1.5">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="space-y-1.5">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Titel der Lernhilfe / Aufgabe *
               </label>
@@ -403,26 +430,58 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                Fach / Kategorie
-              </label>
-              <select
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
-              >
-                <option value="Mathematik">Mathematik</option>
-                <option value="Physik">Physik</option>
-                <option value="Chemie">Chemie</option>
-                <option value="Biologie">Biologie</option>
-                <option value="Informatik">Informatik</option>
-                <option value="Sozialwissenschaften">Sozialwissenschaften</option>
-                <option value="Wirtschaft-Politik">Wirtschaft-Politik</option>
-                <option value="Deutsch">Deutsch</option>
-                <option value="Englisch">Englisch</option>
-                <option value="Sonstiges">Sonstiges</option>
-              </select>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {/* Fach */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Fach / Kategorie
+                </label>
+                <select
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                >
+                  <option value="Mathematik">Mathematik</option>
+                  <option value="Physik">Physik</option>
+                  <option value="Chemie">Chemie</option>
+                  <option value="Biologie">Biologie</option>
+                  <option value="Informatik">Informatik</option>
+                  <option value="Sozialwissenschaften">Sozialwissenschaften</option>
+                  <option value="Wirtschaft-Politik">Wirtschaft-Politik</option>
+                  <option value="Deutsch">Deutsch</option>
+                  <option value="Englisch">Englisch</option>
+                  <option value="Sonstiges">Sonstiges</option>
+                </select>
+              </div>
+
+              {/* Jahrgangsstufe */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Jahrgangsstufe / Klasse
+                </label>
+                <select
+                  value={gradeLevel}
+                  onChange={(e) => setGradeLevel(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                >
+                  {standardGrades.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                  <option value="custom">Eigene Angabe...</option>
+                </select>
+                {gradeLevel === 'custom' && (
+                  <input
+                    type="text"
+                    value={customGradeLevel}
+                    onChange={(e) => setCustomGradeLevel(e.target.value)}
+                    placeholder="z. B. 7b, Diff-Kurs 9, LK..."
+                    className="w-full px-3.5 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 mt-1"
+                  />
+                )}
+              </div>
             </div>
           </div>
 

@@ -8,7 +8,6 @@ import {
   isPasskeyEnrolled,
   getBiometricDeviceLabel,
 } from '../utils/passkeyAuth';
-import { PWAInstallButton } from './PWAInstallButton';
 import {
   QrCode,
   Lock,
@@ -184,8 +183,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
           {/* Zone 3: Quick Controls */}
           <div className="flex items-center gap-2">
-            <PWAInstallButton />
-
             <button
               type="button"
               onClick={onToggleDarkMode}
@@ -195,16 +192,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
               {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Discrete Teacher Login Button with Lock */}
+            {/* Discrete Teacher Login Button with Lock / Fingerprint */}
             <button
               type="button"
               onClick={() => {
                 setShowTeacherPinModal(true);
                 setPinError(null);
               }}
+              title={passkeyEnrolled ? `${deviceLabel} oder PIN zum Entsperren` : 'Lehrkraft-Bereich mit PIN entsperren'}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-slate-100 dark:bg-slate-800/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors border border-slate-200 dark:border-slate-700"
             >
-              <Lock className="w-3.5 h-3.5 text-indigo-500" />
+              {passkeyEnrolled ? (
+                <Fingerprint className="w-3.5 h-3.5 text-indigo-500" />
+              ) : (
+                <Lock className="w-3.5 h-3.5 text-indigo-500" />
+              )}
               <span>Lehrkraft-Bereich</span>
             </button>
           </div>

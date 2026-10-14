@@ -13,11 +13,29 @@ export interface Lernhilfe {
   id: string;
   title: string;
   subject?: string;
+  grade_level?: string; // Jahrgangsstufe (z. B. "Klasse 7", "Klasse 9", "EF", "Q1")
   task_context: string;
   task_image?: string;
   hints: Hint[];
   created_at: string;
   updated_at: string;
+}
+
+export type FeedbackRating = 'up' | 'down';
+
+export interface HintStat {
+  hintId: string;
+  views: number;
+  helpfulCount: number;
+  unhelpfulCount: number;
+}
+
+export interface LernhilfeStats {
+  lernhilfeId: string;
+  totalViews: number;
+  hintStats: Record<string, HintStat>;
+  lastViewedAt?: string;
+  updatedAt: string;
 }
 
 export interface SupabaseSettings {

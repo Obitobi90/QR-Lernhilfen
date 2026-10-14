@@ -12,8 +12,8 @@ import { StudentPortal } from './components/StudentPortal';
 import { TeacherView } from './components/TeacherView';
 import { LernhilfeEditor } from './components/LernhilfeEditor';
 import { QrCodeModal } from './components/QrCodeModal';
+import { StatsModal } from './components/StatsModal';
 import { SettingsModal } from './components/SettingsModal';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import {
   isTeacherSessionActive,
   setTeacherSessionActive,
@@ -54,6 +54,7 @@ export default function App() {
   const [editingItem, setEditingItem] = useState<Lernhilfe | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
   const [qrModalItem, setQrModalItem] = useState<Lernhilfe | null>(null);
+  const [statsModalItem, setStatsModalItem] = useState<Lernhilfe | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(false);
 
@@ -300,9 +301,6 @@ export default function App() {
               <span className="hidden sm:inline">Sperren</span>
             </button>
 
-            {/* Install on Android / iOS button */}
-            <PWAInstallButton />
-
             {/* Dark mode toggle */}
             <button
               type="button"
@@ -313,11 +311,11 @@ export default function App() {
               {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Settings gear button */}
+            {/* Settings & Options gear button */}
             <button
               type="button"
               onClick={() => setIsSettingsOpen(true)}
-              title="Einstellungen &amp; Backend"
+              title="Einstellungen & Optionen"
               className="p-2 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <Settings className="w-4 h-4" />
@@ -346,6 +344,7 @@ export default function App() {
             onDuplicate={handleDuplicateLernhilfe}
             onDelete={handleDeleteLernhilfe}
             onOpenQr={(item) => setQrModalItem(item)}
+            onOpenStats={(item) => setStatsModalItem(item)}
             onOpenPreview={handleOpenStudentView}
             onOpenSettings={() => setIsSettingsOpen(true)}
             isSupabaseEnabled={isSupabaseEnabled}
@@ -369,6 +368,13 @@ export default function App() {
             setQrModalItem(null);
             handleOpenStudentView(id);
           }}
+        />
+      )}
+
+      {statsModalItem && (
+        <StatsModal
+          item={statsModalItem}
+          onClose={() => setStatsModalItem(null)}
         />
       )}
 

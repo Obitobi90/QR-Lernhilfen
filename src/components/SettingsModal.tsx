@@ -21,6 +21,7 @@ import {
   removePasskey,
   getBiometricDeviceLabel,
 } from '../utils/passkeyAuth';
+import { PWAInstallButton } from './PWAInstallButton';
 import {
   X,
   Key,
@@ -286,7 +287,7 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-600" />
             <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">
-              Einstellungen &amp; Backend
+              Optionen &amp; Einstellungen
             </h3>
           </div>
           <button
@@ -442,6 +443,9 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
               </button>
             </div>
           </div>
+
+          {/* Section: Web-App Installation (PWA) under Options */}
+          <PWAInstallButton variant="settings-card" />
 
           <hr className="border-slate-200 dark:border-slate-800" />
 

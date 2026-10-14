@@ -21,9 +21,16 @@ import {
   Sun,
   X,
   QrCode,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { PWAInstallButton } from './PWAInstallButton';
+import {
+  recordTaskView,
+  recordHintView,
+  voteHint,
+  getLocalVote,
+} from '../utils/statsService';
 
 interface StudentViewProps {
   item: Lernhilfe;
@@ -50,16 +57,33 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const [unlockedPins, setUnlockedPins] = useState<Record<string, boolean>>({});
   // PIN input buffer per hint
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
-  const [pinErrors, setPinErrors] = useState<Record<string, boolean>>({});
+  // User votes per hint (Thumbs up / Thumbs down)
+  const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
 
-  // Reset states if item changes
+  // Reset states and record views if item changes
   useEffect(() => {
     setUnlockedCount(1);
     setOpenHints({ [item.hints[0]?.id || '']: true });
     setUnlockedPins({});
     setPinInputs({});
     setPinErrors({});
-  }, [item.id]);
+
+    // Load existing votes for each hint of this item
+    const initialVotes: Record<string, 'up' | 'down'> = {};
+    item.hints.forEach((h) => {
+      const v = getLocalVote(item.id, h.id);
+      if (v) initialVotes[h.id] = v;
+    });
+    setUserVotes(initialVotes);
+
+    // Record general task open view and hint 1 view (if real student access)
+    if (!isTeacherPreview) {
+      recordTaskView(item.id);
+      if (item.hints[0]?.id) {
+        recordHintView(item.id, item.hints[0].id);
+      }
+    }
+  }, [item.id, isTeacherPreview]);
 
   const toggleHintOpen = (hintId: string) => {
     setOpenHints((prev) => ({
@@ -77,6 +101,11 @@ export const StudentView: React.FC<StudentViewProps> = ({
         ...prev,
         [nextHintId]: true,
       }));
+
+      // Record view for this newly revealed hint
+      if (!isTeacherPreview) {
+        recordHintView(item.id, nextHintId);
+      }
     }
 
     // Gentle scroll to newly revealed hint
@@ -95,6 +124,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
         origin: { y: 0.8 },
       });
     }
+  };
+
+  // Student voting handler (Thumbs up / down)
+  const handleVote = async (hintId: string, rating: 'up' | 'down') => {
+    setUserVotes((prev) => ({ ...prev, [hintId]: rating }));
+    await voteHint(item.id, hintId, rating);
   };
 
   const handlePinSubmit = (hintId: string, expectedPin: string) => {
@@ -137,7 +172,6 @@ export const StudentView: React.FC<StudentViewProps> = ({
           )}
 
           <div className="flex items-center gap-2">
-            <PWAInstallButton />
             {onToggleDarkMode && (
               <button
                 type="button"
@@ -162,13 +196,18 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
         {/* Task Header Box */}
         <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
             {item.subject && (
               <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold">
                 {item.subject}
               </span>
             )}
-            {item.subject && <span>·</span>}
+            {item.grade_level && (
+              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700">
+                {item.grade_level}
+              </span>
+            )}
+            <span>·</span>
             <span>{item.hints.length} gestufte {item.hints.length === 1 ? 'Tippkarte' : 'Tippkarten'}</span>
           </div>
 
@@ -385,6 +424,45 @@ export const StudentView: React.FC<StudentViewProps> = ({
                             />
                           </div>
                         )}
+
+                        {/* Unobtrusive Feedback Row (Thumbs up / Thumbs down) */}
+                        <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-end gap-1 text-xs text-slate-400">
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 mr-1 select-none hidden xs:inline">
+                            War dieser Tipp hilfreich?
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleVote(hint.id, 'up')}
+                            title="Tipp war hilfreich"
+                            aria-label="Tipp war hilfreich"
+                            className={`p-1.5 rounded-lg flex items-center gap-1 text-xs transition-colors ${
+                              userVotes[hint.id] === 'up'
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold ring-1 ring-emerald-300 dark:ring-emerald-800'
+                                : 'text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                            }`}
+                          >
+                            <ThumbsUp className={`w-3.5 h-3.5 ${userVotes[hint.id] === 'up' ? 'fill-current' : ''}`} />
+                            {userVotes[hint.id] === 'up' && (
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Hilfreich</span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleVote(hint.id, 'down')}
+                            title="Tipp war nicht so hilfreich"
+                            aria-label="Tipp war nicht so hilfreich"
+                            className={`p-1.5 rounded-lg flex items-center gap-1 text-xs transition-colors ${
+                              userVotes[hint.id] === 'down'
+                                ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-semibold ring-1 ring-rose-300 dark:ring-rose-800'
+                                : 'text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                            }`}
+                          >
+                            <ThumbsDown className={`w-3.5 h-3.5 ${userVotes[hint.id] === 'down' ? 'fill-current' : ''}`} />
+                            {userVotes[hint.id] === 'down' && (
+                              <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">Nicht hilfreich</span>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

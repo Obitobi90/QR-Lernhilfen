@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
+import fs from 'fs';
 
 dotenv.config();
 
@@ -189,6 +190,219 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im folgenden Format:
       error: error.message || 'Fehler beim Extrahieren des Aufgabentexts aus dem Foto.',
     });
   }
+});
+
+// ==========================================
+// STATISTICS & FEEDBACK API (QR & TIPPS)
+// ==========================================
+const STATS_FILE = path.resolve(process.cwd(), 'lernhilfen_stats.json');
+
+interface StoredHintStat {
+  hintId: string;
+  views: number;
+  helpfulCount: number;
+  unhelpfulCount: number;
+}
+
+interface StoredLernhilfeStats {
+  lernhilfeId: string;
+  totalViews: number;
+  hintStats: Record<string, StoredHintStat>;
+  lastViewedAt?: string;
+  updatedAt: string;
+}
+
+interface VoteRecord {
+  rating: 'up' | 'down';
+  ip: string;
+  voterId: string;
+  timestamp: string;
+}
+
+let statsDb: Record<string, StoredLernhilfeStats> = {};
+let votesDb: Record<string, VoteRecord> = {};
+
+// Load stats from disk on startup
+try {
+  if (fs.existsSync(STATS_FILE)) {
+    const raw = fs.readFileSync(STATS_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    statsDb = parsed.stats || {};
+    votesDb = parsed.votes || {};
+  }
+} catch (e) {
+  console.warn('Could not read stats file, initializing fresh store:', e);
+}
+
+function saveStatsToDisk() {
+  try {
+    fs.writeFileSync(
+      STATS_FILE,
+      JSON.stringify({ stats: statsDb, votes: votesDb }, null, 2),
+      'utf-8'
+    );
+  } catch (e) {
+    console.warn('Could not save stats file:', e);
+  }
+}
+
+const getClientIp = (req: express.Request): string => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || '127.0.0.1';
+};
+
+// 1. Get statistics for a specific Lernhilfe
+app.get('/api/stats/:lernhilfeId', (req, res) => {
+  const { lernhilfeId } = req.params;
+  const itemStats = statsDb[lernhilfeId] || {
+    lernhilfeId,
+    totalViews: 0,
+    hintStats: {},
+    updatedAt: new Date().toISOString(),
+  };
+  return res.json({ stats: itemStats });
+});
+
+// 2. Track view for Lernhilfe or specific hint
+app.post('/api/stats/:lernhilfeId/view', (req, res) => {
+  const { lernhilfeId } = req.params;
+  const { hintId } = req.body || {};
+
+  if (!statsDb[lernhilfeId]) {
+    statsDb[lernhilfeId] = {
+      lernhilfeId,
+      totalViews: 0,
+      hintStats: {},
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const stat = statsDb[lernhilfeId];
+  stat.updatedAt = new Date().toISOString();
+  stat.lastViewedAt = new Date().toISOString();
+
+  // If hintId is provided, increment specific hint view count
+  if (hintId && typeof hintId === 'string') {
+    if (!stat.hintStats[hintId]) {
+      stat.hintStats[hintId] = {
+        hintId,
+        views: 0,
+        helpfulCount: 0,
+        unhelpfulCount: 0,
+      };
+    }
+    stat.hintStats[hintId].views += 1;
+  } else {
+    // General task open view
+    stat.totalViews += 1;
+  }
+
+  saveStatsToDisk();
+  return res.json({ success: true, stats: stat });
+});
+
+// 3. Submit feedback (Thumbs up / Thumbs down) per hint with IP & voter token verification
+app.post('/api/stats/:lernhilfeId/vote', (req, res) => {
+  const { lernhilfeId } = req.params;
+  const { hintId, rating, voterId } = req.body || {};
+
+  if (!hintId || !rating || (rating !== 'up' && rating !== 'down')) {
+    return res.status(400).json({ error: 'Ungültige Parameter (hintId und rating up/down erforderlich).' });
+  }
+
+  const clientIp = getClientIp(req);
+  const voterKey = `${lernhilfeId}:::${hintId}:::${clientIp}:::${voterId || ''}`;
+
+  if (!statsDb[lernhilfeId]) {
+    statsDb[lernhilfeId] = {
+      lernhilfeId,
+      totalViews: 1,
+      hintStats: {},
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const stat = statsDb[lernhilfeId];
+  if (!stat.hintStats[hintId]) {
+    stat.hintStats[hintId] = {
+      hintId,
+      views: 1,
+      helpfulCount: 0,
+      unhelpfulCount: 0,
+    };
+  }
+
+  const hintStat = stat.hintStats[hintId];
+  const existingVote = votesDb[voterKey];
+
+  if (existingVote) {
+    if (existingVote.rating === rating) {
+      // User has already cast this exact vote
+      return res.json({
+        success: true,
+        alreadyVoted: true,
+        currentRating: rating,
+        stats: stat,
+      });
+    } else {
+      // User is changing their vote (e.g. from down to up or up to down)
+      if (existingVote.rating === 'up') {
+        hintStat.helpfulCount = Math.max(0, hintStat.helpfulCount - 1);
+        hintStat.unhelpfulCount += 1;
+      } else {
+        hintStat.unhelpfulCount = Math.max(0, hintStat.unhelpfulCount - 1);
+        hintStat.helpfulCount += 1;
+      }
+      existingVote.rating = rating;
+      existingVote.timestamp = new Date().toISOString();
+    }
+  } else {
+    // New vote from this IP/voter
+    if (rating === 'up') {
+      hintStat.helpfulCount += 1;
+    } else {
+      hintStat.unhelpfulCount += 1;
+    }
+    votesDb[voterKey] = {
+      rating,
+      ip: clientIp,
+      voterId: voterId || '',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  stat.updatedAt = new Date().toISOString();
+  saveStatsToDisk();
+
+  return res.json({
+    success: true,
+    currentRating: rating,
+    stats: stat,
+  });
+});
+
+// 4. Reset stats for a Lernhilfe (Teacher only)
+app.post('/api/stats/:lernhilfeId/reset', (req, res) => {
+  const { lernhilfeId } = req.params;
+  statsDb[lernhilfeId] = {
+    lernhilfeId,
+    totalViews: 0,
+    hintStats: {},
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Remove vote records for this lernhilfe
+  for (const key of Object.keys(votesDb)) {
+    if (key.startsWith(`${lernhilfeId}:::`)) {
+      delete votesDb[key];
+    }
+  }
+
+  saveStatsToDisk();
+  return res.json({ success: true, stats: statsDb[lernhilfeId] });
 });
 
 async function startServer() {
