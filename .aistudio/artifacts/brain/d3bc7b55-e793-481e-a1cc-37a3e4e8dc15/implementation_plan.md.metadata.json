@@ -1,0 +1,6 @@
+{
+  "summary": "Umfassender Implementierungsplan für die Web-App 'Digitale QR-Lernhilfen / Gestufte Tippkarten' mit getrennter Schüler- und Lehreransicht, PIN-Sperre, KaTeX- und MathLive-Formelunterstützung, Multimedia (Canvas-Bildkompression, Audio-Recorder, YouTube, GeoGebra, H5P), KI-gestützter Tippgenerierung via Gemini API und hybridem Supabase-/LocalStorage-Backend.",
+  "updatedAt": "2026-10-14T17:30:57.882288540Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

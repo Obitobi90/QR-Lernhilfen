@@ -1,0 +1,6 @@
+{
+  "name": "Digitale QR-Lernhilfen & Gestufte Tippkarten",
+  "description": "Moderne Web-App für den Schulunterricht: Gestufte Tippkarten per QR-Code für Schüler, KaTeX-Formeln, Multimedia, didaktischer KI-Tipp-Generator und Supabase-Integration.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
