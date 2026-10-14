@@ -8,11 +8,16 @@ import {
   getSupabaseSettings,
 } from './utils/supabaseClient';
 import { StudentView } from './components/StudentView';
+import { StudentPortal } from './components/StudentPortal';
 import { TeacherView } from './components/TeacherView';
 import { LernhilfeEditor } from './components/LernhilfeEditor';
 import { QrCodeModal } from './components/QrCodeModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import {
+  isTeacherSessionActive,
+  setTeacherSessionActive,
+} from './utils/teacherAuth';
 import {
   Moon,
   Sun,
@@ -22,6 +27,7 @@ import {
   Cloud,
   HardDrive,
   RefreshCw,
+  Lock,
 } from 'lucide-react';
 
 export default function App() {
@@ -53,6 +59,9 @@ export default function App() {
 
   // Teacher Preview vs Real Student Access
   const [isTeacherPreview, setIsTeacherPreview] = useState<boolean>(false);
+
+  // Teacher Authentication state (protects overview, create, edit, delete against student URL manipulation)
+  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState<boolean>(() => isTeacherSessionActive());
 
   // Apply dark mode class and data-theme to documentElement and body
   useEffect(() => {
@@ -121,6 +130,14 @@ export default function App() {
   const handleOpenStudentView = (id: string) => {
     setIsTeacherPreview(true);
     const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}&preview=teacher`;
+    window.history.pushState({}, '', newUrl);
+    syncFromUrl();
+  };
+
+  // Student Navigation: Open Direct Student View (from Student Portal)
+  const handleOpenStudentDirect = (id: string) => {
+    setIsTeacherPreview(false);
+    const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}`;
     window.history.pushState({}, '', newUrl);
     syncFromUrl();
   };
@@ -204,12 +221,29 @@ export default function App() {
     );
   }
 
-  // 2. Teacher Mode (Default view when no ?id=... in URL)
+  // 2. Student Portal: When ?id= is missing and user is NOT authenticated as Teacher
+  // Prevents pupils from clearing the URL and accessing the teacher dashboard
+  if (!isTeacherAuthenticated) {
+    return (
+      <StudentPortal
+        items={items}
+        onOpenItem={handleOpenStudentDirect}
+        onTeacherLogin={() => {
+          setTeacherSessionActive(true);
+          setIsTeacherAuthenticated(true);
+        }}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+      />
+    );
+  }
+
+  // 3. Teacher Mode (Only visible when authenticated via Teacher PIN)
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
       {/* Top Bar following 3-Zone Top Bar Contract */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 no-print">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4 sm:gap-8">
           {/* Zone 1: Single text element wordmark */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -226,6 +260,9 @@ export default function App() {
             >
               QR-Lernhilfen
             </a>
+            <span className="hidden md:inline-block px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200 dark:border-emerald-800">
+              Lehrkraft-Modus
+            </span>
           </div>
 
           {/* Zone 2: Storage Status Badge (clean, non-redundant) */}
@@ -249,6 +286,20 @@ export default function App() {
 
           {/* Zone 3: Quick Controls */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Lock / Teacher Logout Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setTeacherSessionActive(false);
+                setIsTeacherAuthenticated(false);
+              }}
+              title="Lehrkraft-Bereich sperren (Schutz vor Schülern)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg border border-amber-200 dark:border-amber-800 transition-colors shadow-xs"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span className="hidden sm:inline">Sperren</span>
+            </button>
+
             {/* Install on Android / iOS button */}
             <PWAInstallButton />
 
@@ -324,7 +375,10 @@ export default function App() {
       {isSettingsOpen && (
         <SettingsModal
           onClose={() => setIsSettingsOpen(false)}
-          onSettingsUpdated={loadData}
+          onSettingsUpdated={() => {
+            setIsTeacherAuthenticated(isTeacherSessionActive());
+            loadData();
+          }}
         />
       )}
     </div>

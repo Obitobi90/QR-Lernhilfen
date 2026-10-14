@@ -9,6 +9,19 @@ import {
   getSupabaseClient,
 } from '../utils/supabaseClient';
 import {
+  getTeacherPin,
+  setTeacherPin,
+  setTeacherSessionActive,
+} from '../utils/teacherAuth';
+import {
+  isBiometricsSupported,
+  isPasskeyEnrolled,
+  registerPasskey,
+  authenticateWithPasskey,
+  removePasskey,
+  getBiometricDeviceLabel,
+} from '../utils/passkeyAuth';
+import {
   X,
   Key,
   Database,
@@ -20,6 +33,10 @@ import {
   LogOut,
   ExternalLink,
   ShieldCheck,
+  Shield,
+  Eye,
+  EyeOff,
+  Fingerprint,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -28,6 +45,19 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSettingsUpdated }) => {
+  // Teacher PIN Security state
+  const [teacherPin, setTeacherPinState] = useState<string>('1234');
+  const [showPin, setShowPin] = useState<boolean>(false);
+  const [pinSaved, setPinSaved] = useState<boolean>(false);
+
+  // Biometrics & Passkey State
+  const [biometricsSupported, setBiometricsSupported] = useState<boolean>(false);
+  const [passkeyEnrolled, setPasskeyEnrolled] = useState<boolean>(false);
+  const [deviceLabel, setDeviceLabel] = useState<string>('Passkey');
+  const [passkeyActionLoading, setPasskeyActionLoading] = useState<boolean>(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
+  const [passkeySuccess, setPasskeySuccess] = useState<string | null>(null);
+
   // Gemini API Key state
   const [geminiKey, setGeminiKey] = useState<string>('');
   const [geminiSaved, setGeminiSaved] = useState<boolean>(false);
@@ -49,7 +79,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
 
   useEffect(() => {
+    setTeacherPinState(getTeacherPin());
     setGeminiKey(getStoredGeminiKey());
+    setDeviceLabel(getBiometricDeviceLabel());
+    setPasskeyEnrolled(isPasskeyEnrolled());
+
+    isBiometricsSupported().then((supported) => {
+      setBiometricsSupported(supported);
+    });
+
     const sb = getSupabaseSettings();
     setSupabaseUrl(sb.url || '');
     setSupabaseAnonKey(sb.anonKey || '');
@@ -65,6 +103,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
       });
     }
   }, []);
+
+  const handleSavePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherPin.trim()) return;
+    setTeacherPin(teacherPin.trim());
+    setPinSaved(true);
+    setTimeout(() => setPinSaved(false), 2500);
+    onSettingsUpdated();
+  };
+
+  const handleLockNow = () => {
+    setTeacherSessionActive(false);
+    onClose();
+    onSettingsUpdated();
+  };
+
+  const handleRegisterPasskey = async () => {
+    setPasskeyError(null);
+    setPasskeySuccess(null);
+    setPasskeyActionLoading(true);
+
+    const res = await registerPasskey();
+    setPasskeyActionLoading(false);
+
+    if (res.success) {
+      setPasskeyEnrolled(true);
+      setPasskeySuccess(`${deviceLabel} erfolgreich eingerichtet!`);
+      setTimeout(() => setPasskeySuccess(null), 3500);
+    } else {
+      setPasskeyError(res.error || 'Einrichtung fehlgeschlagen.');
+    }
+  };
+
+  const handleTestPasskey = async () => {
+    setPasskeyError(null);
+    setPasskeySuccess(null);
+    setPasskeyActionLoading(true);
+
+    const res = await authenticateWithPasskey();
+    setPasskeyActionLoading(false);
+
+    if (res.success) {
+      setPasskeySuccess('Biometrie erfolgreich bestätigt!');
+      setTimeout(() => setPasskeySuccess(null), 3500);
+    } else {
+      setPasskeyError(res.error || 'Authentifizierung fehlgeschlagen.');
+    }
+  };
+
+  const handleRemovePasskey = () => {
+    removePasskey();
+    setPasskeyEnrolled(false);
+    setPasskeySuccess(`${deviceLabel} wurde entfernt.`);
+    setTimeout(() => setPasskeySuccess(null), 3000);
+  };
 
   const handleSaveGemini = (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,6 +299,152 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
 
         {/* Scrollable Body */}
         <div className="p-5 sm:p-6 space-y-6 overflow-y-auto">
+          {/* Section 0: Lehrkraft-Sicherheit & PIN-Schutz */}
+          <div className="space-y-3 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 p-4 rounded-xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  Lehrkraft-Sicherheit &amp; PIN-Schutz
+                </h4>
+              </div>
+              <span className="px-2 py-0.5 text-[11px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 rounded-md border border-emerald-200 dark:border-emerald-800">
+                Aktiv
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Verhindert, dass Schüler durch Löschen des URL-Codes (<code className="font-mono text-indigo-500 font-semibold">?id=...</code>) in den Lehrerbereich gelangen oder Tippkarten manipulieren/löschen. Ohne PIN sehen Schüler nur das geschützte Schülerportal.
+            </p>
+
+            <form onSubmit={handleSavePin} className="space-y-2 pt-1">
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                Lehrkraft-PIN (z. B. 4 bis 8 Ziffern/Zeichen):
+              </label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showPin ? 'text' : 'password'}
+                    value={teacherPin}
+                    onChange={(e) => setTeacherPinState(e.target.value)}
+                    placeholder="1234"
+                    className="w-full pl-3.5 pr-9 py-2 text-xs font-mono tracking-wider bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin(!showPin)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 shrink-0"
+                >
+                  {pinSaved ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>PIN gesichert!</span>
+                    </>
+                  ) : (
+                    <span>PIN ändern</span>
+                  )}
+                </button>
+              </div>
+            </form>
+
+            {/* Biometrische Passkey-Entsperrung (Fingerprint / Windows Hello) */}
+            <div className="pt-3 border-t border-amber-200/60 dark:border-amber-900/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                  <Fingerprint className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>{deviceLabel} (Biometrischer Passkey)</span>
+                </div>
+                {passkeyEnrolled ? (
+                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-md border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    <span>Aktiv</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">Nicht eingerichtet</span>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                Ermöglicht das bequeme Entsperren über den Smartphone-Fingerabdrucksensor (Touch ID / Face ID) oder Windows Hello Passkey, ohne jedes Mal die PIN tippen zu müssen.
+              </p>
+
+              {passkeyError && (
+                <div className="p-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-lg text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{passkeyError}</span>
+                </div>
+              )}
+
+              {passkeySuccess && (
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                  <span>{passkeySuccess}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {!passkeyEnrolled ? (
+                  <button
+                    type="button"
+                    onClick={handleRegisterPasskey}
+                    disabled={passkeyActionLoading || !biometricsSupported}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
+                  >
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    <span>
+                      {passkeyActionLoading
+                        ? 'Warte auf Eingabe...'
+                        : !biometricsSupported
+                        ? 'Biometrie wird nicht unterstützt'
+                        : `${deviceLabel} jetzt einrichten`}
+                    </span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleTestPasskey}
+                      disabled={passkeyActionLoading}
+                      className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold rounded-lg flex items-center gap-1.5"
+                    >
+                      <Fingerprint className="w-3.5 h-3.5" />
+                      <span>{passkeyActionLoading ? 'Prüfe...' : 'Biometrie testen'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemovePasskey}
+                      className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg text-xs font-medium border border-rose-200 dark:border-rose-900"
+                    >
+                      Entfernen
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-amber-200/60 dark:border-amber-900/40">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Lehrkraft-Bereich auf diesem Gerät sperren:
+              </span>
+              <button
+                type="button"
+                onClick={handleLockNow}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+              >
+                <Lock className="w-3 h-3" />
+                <span>Jetzt sperren</span>
+              </button>
+            </div>
+          </div>
+
+          <hr className="border-slate-200 dark:border-slate-800" />
+
           {/* Section 1: Google Gemini API Key */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
