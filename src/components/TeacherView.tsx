@@ -43,7 +43,17 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('Alle');
 
-  const subjects = ['Alle', 'Mathematik', 'Physik', 'Chemie', 'Biologie', 'Informatik', 'Sonstiges'];
+  const subjects = [
+    'Alle',
+    'Mathematik',
+    'Physik',
+    'Chemie',
+    'Biologie',
+    'Informatik',
+    'Sozialwissenschaften',
+    'Wirtschaft-Politik',
+    'Sonstiges',
+  ];
 
   const filteredItems = items.filter((item) => {
     const matchesSearch =
@@ -169,14 +179,19 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                   </div>
 
                   {/* Title */}
-                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 line-clamp-2 leading-snug">
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 leading-snug">
                     {item.title}
                   </h3>
 
-                  {/* Task context preview */}
+                  {/* Task context preview - completely displayed without line-clamp */}
                   {item.task_context && (
-                    <div className="text-xs text-slate-600 dark:text-slate-400 line-clamp-3 bg-slate-50 dark:bg-slate-950/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
-                      <LaTeXRenderer content={item.task_context} />
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Aufgabentext:
+                      </span>
+                      <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed whitespace-pre-wrap">
+                        <LaTeXRenderer content={item.task_context} />
+                      </div>
                     </div>
                   )}
                 </div>

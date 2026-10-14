@@ -19,20 +19,24 @@ import {
   HelpCircle,
   Moon,
   Sun,
+  X,
+  QrCode,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface StudentViewProps {
   item: Lernhilfe;
-  onBackToTeacher?: () => void;
+  isTeacherPreview?: boolean;
+  onClosePreview?: () => void;
   darkMode?: boolean;
   onToggleDarkMode?: () => void;
 }
 
 export const StudentView: React.FC<StudentViewProps> = ({
   item,
-  onBackToTeacher,
+  isTeacherPreview = false,
+  onClosePreview,
   darkMode,
   onToggleDarkMode,
 }) => {
@@ -109,21 +113,29 @@ export const StudentView: React.FC<StudentViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 py-6 px-4 sm:px-6">
-      <div className="max-w-2xl mx-auto space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 py-3 sm:py-6 px-3 sm:px-6">
+      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
         {/* Navigation Bar / Mode Indicator */}
-        <div className="flex items-center justify-between no-print gap-2">
-          {onBackToTeacher ? (
+        <div className="flex items-center justify-between no-print gap-2 py-1">
+          {isTeacherPreview && onClosePreview ? (
             <button
-              onClick={onBackToTeacher}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+              onClick={onClosePreview}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-2xs"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Zurück zur Übersicht</span>
+              <X className="w-3.5 h-3.5 text-slate-500" />
+              <span>Vorschau schließen</span>
             </button>
           ) : (
-            <div className="text-xs text-slate-400">Digitale Lernhilfe</div>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                <QrCode className="w-4 h-4" />
+              </div>
+              <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-slate-100">
+                QR-Lernhilfe
+              </span>
+            </div>
           )}
+
           <div className="flex items-center gap-2">
             <PWAInstallButton />
             {onToggleDarkMode && (
@@ -131,35 +143,47 @@ export const StudentView: React.FC<StudentViewProps> = ({
                 type="button"
                 onClick={onToggleDarkMode}
                 title={darkMode ? 'Heller Modus' : 'Dunkler Modus'}
-                className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                className="p-2 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
               >
                 {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
               </button>
             )}
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-1 rounded-full whitespace-nowrap">
-              Schüler-Ansicht
-            </span>
+            {isTeacherPreview ? (
+              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full whitespace-nowrap">
+                Lehrer-Vorschau
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-full whitespace-nowrap">
+                Tippkarten
+              </span>
+            )}
           </div>
         </div>
 
         {/* Task Header Box */}
-        <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xs space-y-3">
+        <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {item.subject && <span>{item.subject}</span>}
+            {item.subject && (
+              <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold">
+                {item.subject}
+              </span>
+            )}
             {item.subject && <span>·</span>}
             <span>{item.hints.length} gestufte {item.hints.length === 1 ? 'Tippkarte' : 'Tippkarten'}</span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-snug">
             {item.title}
           </h1>
 
           {item.task_context && (
             <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 text-sm text-slate-700 dark:text-slate-300">
-              <span className="font-semibold text-xs text-slate-400 uppercase tracking-wider block mb-1">
+              <span className="font-bold text-[11px] text-slate-400 uppercase tracking-wider block mb-1">
                 Aufgabenstellung:
               </span>
-              <LaTeXRenderer content={item.task_context} className="text-base" />
+              <div className="leading-relaxed whitespace-pre-wrap">
+                <LaTeXRenderer content={item.task_context} className="text-sm sm:text-base" />
+              </div>
             </div>
           )}
 
@@ -371,19 +395,19 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
           {/* Stepped Next Button (Progressive Disclosure) */}
           {unlockedCount < item.hints.length && (
-            <div className="pt-2 text-center">
+            <div className="pt-3 text-center space-y-2">
               <button
                 type="button"
                 onClick={() => handleRevealNext(unlockedCount)}
-                className="w-full py-3.5 px-5 bg-white hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/80 border-2 border-dashed border-indigo-300 dark:border-indigo-700 hover:border-indigo-500 rounded-2xl text-indigo-600 dark:text-indigo-400 font-bold text-sm shadow-xs transition-all flex items-center justify-center gap-2 group"
+                className="w-full py-4 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-bold text-sm sm:text-base shadow-md hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2.5 min-h-[52px]"
               >
-                <Sparkles className="w-4 h-4 text-indigo-500 group-hover:scale-110 transition-transform" />
+                <Sparkles className="w-5 h-5 text-indigo-200" />
                 <span>
                   Nächsten Tipp anzeigen ({item.hints[unlockedCount]?.title || `Tipp ${unlockedCount + 1}`})
                 </span>
               </button>
-              <p className="text-[11px] text-slate-400 mt-1.5">
-                Versuche erst mit den aktuellen Tipps weiterzukommen, bevor du den nächsten öffnest.
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                💡 Versuche erst mit den vorhandenen Tipps weiterzukommen, bevor du den nächsten öffnest.
               </p>
             </div>
           )}

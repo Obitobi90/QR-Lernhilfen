@@ -6,7 +6,6 @@ import { generateSteppedHintsWithAI, extractTaskTextFromImage } from '../utils/g
 import { uploadMediaToSupabase } from '../utils/supabaseClient';
 import { MathFormulaHelper } from './MathFormulaHelper';
 import { AudioRecorder } from './AudioRecorder';
-import { CameraCaptureModal } from './CameraCaptureModal';
 import { LaTeXRenderer } from '../utils/latexRenderer';
 import {
   Plus,
@@ -25,7 +24,6 @@ import {
   Eye,
   Camera,
   FolderOpen,
-  ScanLine,
   Loader2,
   Calculator,
   FileText,
@@ -80,9 +78,6 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [extractSuccess, setExtractSuccess] = useState<string | null>(null);
   const [autoExtractOnUpload, setAutoExtractOnUpload] = useState<boolean>(false);
 
-  // Camera modal state: 'task' or hint index or null
-  const [cameraModalTarget, setCameraModalTarget] = useState<'task' | number | null>(null);
-
   // Extract task text and math formulas from image
   const handleExtractText = async (imageToUse?: string) => {
     const img = imageToUse || taskImage;
@@ -122,7 +117,17 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
       // Auto-suggest subject if default
       if (data.detectedSubject && subject === 'Mathematik') {
-        const allowedSubjects = ['Mathematik', 'Physik', 'Chemie', 'Biologie', 'Informatik', 'Deutsch', 'Englisch'];
+        const allowedSubjects = [
+          'Mathematik',
+          'Physik',
+          'Chemie',
+          'Biologie',
+          'Informatik',
+          'Sozialwissenschaften',
+          'Wirtschaft-Politik',
+          'Deutsch',
+          'Englisch',
+        ];
         const found = allowedSubjects.find((s) => s.toLowerCase() === data.detectedSubject?.toLowerCase());
         if (found) {
           setSubject(found);
@@ -135,29 +140,6 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     } finally {
       setIsExtractingText(false);
     }
-  };
-
-  const handleCameraCapture = async (dataUrl: string, blob: Blob) => {
-    let targetUrl = dataUrl;
-    try {
-      const cloudUrl = await uploadMediaToSupabase(blob, `camera_${Date.now()}.jpg`);
-      if (cloudUrl) targetUrl = cloudUrl;
-    } catch (e) {
-      // fallback to dataUrl
-    }
-
-    if (cameraModalTarget === 'task') {
-      setTaskImage(targetUrl);
-      if (autoExtractOnUpload) {
-        handleExtractText(targetUrl);
-      }
-    } else if (typeof cameraModalTarget === 'number') {
-      handleUpdateHint(cameraModalTarget, {
-        mediaType: 'image',
-        mediaData: targetUrl,
-      });
-    }
-    setCameraModalTarget(null);
   };
 
   // Handle Task Image Upload with Canvas compression
@@ -406,11 +388,11 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         </div>
       ) : (
         /* Main Editor Form */
-        <div className="p-4 sm:p-6 space-y-6">
-          {/* Metadata Section */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+          {/* Metadata Section: Mobile-optimized, non-squished layout */}
+          <div className="flex flex-col sm:grid sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="sm:col-span-2 space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Titel der Lernhilfe / Aufgabe *
               </label>
               <input
@@ -418,23 +400,25 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="z.B. Satz des Pythagoras: Die Feuerwehrleiter"
-                className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                 Fach / Kategorie
               </label>
               <select
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
               >
                 <option value="Mathematik">Mathematik</option>
                 <option value="Physik">Physik</option>
                 <option value="Chemie">Chemie</option>
                 <option value="Biologie">Biologie</option>
                 <option value="Informatik">Informatik</option>
+                <option value="Sozialwissenschaften">Sozialwissenschaften</option>
+                <option value="Wirtschaft-Politik">Wirtschaft-Politik</option>
                 <option value="Deutsch">Deutsch</option>
                 <option value="Englisch">Englisch</option>
                 <option value="Sonstiges">Sonstiges</option>
@@ -443,13 +427,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
           </div>
 
           {/* Task Context & Task Photo */}
-          <div className="p-4 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="p-3.5 sm:p-5 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-indigo-500" />
                 <span>Aufgabenstellung &amp; Kontext</span>
                 <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400 normal-case">
-                  (vollständig optional – kann bei reinem Foto auch leer gelassen werden)
+                  (optional)
                 </span>
               </label>
 
@@ -459,7 +443,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     type="button"
                     disabled={isExtractingText}
                     onClick={() => handleExtractText()}
-                    className="text-xs bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 font-semibold transition shadow-xs disabled:opacity-50"
+                    className="text-xs bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300 px-2.5 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 font-semibold transition shadow-xs disabled:opacity-50"
                     title="Extrahiert den Aufgabentext und alle mathematischen Formeln aus dem Foto"
                   >
                     {isExtractingText ? (
@@ -478,7 +462,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsTaskMathHelperOpen(!isTaskMathHelperOpen)}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 font-medium"
+                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 font-semibold p-1"
                 >
                   <Calculator className="w-3.5 h-3.5" />
                   <span>Formel einfügen</span>
@@ -497,8 +481,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               rows={3}
               value={taskContext}
               onChange={(e) => setTaskContext(e.target.value)}
-              placeholder="Hier den Aufgabentext eintragen (vollständig optional! Mathe-Formeln in $formel$ oder $$formel$$ unterstützt, oder oben mit KI aus dem Foto extrahieren)..."
-              className="w-full px-3.5 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Hier den Aufgabentext eintragen (vollständig optional! Mathe-Formeln in $formel$ unterstützt, oder oben mit KI aus dem Foto extrahieren)..."
+              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed"
             />
 
             {/* Live KaTeX Math Formula Preview */}
@@ -510,7 +494,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     Mathematische Formel-Vorschau (KaTeX):
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                    So sehen Schüler die mathematischen Formeln
+                    Schüler-Ansicht
                   </span>
                 </div>
                 <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 pt-0.5">
@@ -554,7 +538,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
             {/* Task Image Options */}
             <div className="space-y-2 pt-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                   Foto der Aufgabe / Schulbuchseite (optional):
                 </span>
@@ -569,9 +553,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 </label>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Clean Non-redundant Mobile Action Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {/* 1. Direct Native Smartphone Camera Capture */}
-                <label className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition shadow-xs">
+                <label className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs sm:text-sm font-bold rounded-xl cursor-pointer transition shadow-xs min-h-[46px] active:scale-[0.99]">
                   <Camera className="w-4 h-4 text-white" />
                   <span>Foto mit Smartphone-Kamera machen</span>
                   <input
@@ -583,19 +568,9 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   />
                 </label>
 
-                {/* 2. In-App Live Camera Viewfinder Modal (Webcam / framing) */}
-                <button
-                  type="button"
-                  onClick={() => setCameraModalTarget('task')}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold border border-slate-200 dark:border-slate-700 transition"
-                >
-                  <ScanLine className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Live-Kamera-Sucher</span>
-                </button>
-
-                {/* 3. Pick from File / Gallery */}
-                <label className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold border border-slate-300 dark:border-slate-700 cursor-pointer transition">
-                  <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+                {/* 2. Pick from File / Gallery */}
+                <label className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold border border-slate-300 dark:border-slate-700 cursor-pointer transition min-h-[46px] active:scale-[0.99]">
+                  <FolderOpen className="w-4 h-4 text-slate-400" />
                   <span>Aus Galerie / Datei wählen</span>
                   <input
                     type="file"
@@ -607,7 +582,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               </div>
 
               {taskImage && (
-                <div className="mt-2.5 p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="mt-2.5 p-3 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <img
                       src={taskImage}
@@ -630,12 +605,12 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                       type="button"
                       disabled={isExtractingText}
                       onClick={() => handleExtractText()}
-                      className="px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition"
+                      className="flex-1 sm:flex-none px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition"
                     >
                       {isExtractingText ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>KI extrahiert Text &amp; Formeln...</span>
+                          <span>KI extrahiert...</span>
                         </>
                       ) : (
                         <>
@@ -721,36 +696,32 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               </button>
             </div>
 
-            {/* Hint Cards List */}
+            {/* Hint Cards List: Mobile-first layout */}
             <div className="space-y-4">
               {hints.map((hint, index) => (
                 <div
                   key={hint.id}
-                  className="bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs"
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs"
                 >
-                  {/* Top Bar of Hint Card */}
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-1">
-                      <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                  {/* Top Bar of Hint Card: Badges and Actions */}
+                  <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <span className="w-7 h-7 rounded-full bg-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-2xs">
                         {index + 1}
                       </span>
-                      <input
-                        type="text"
-                        value={hint.title}
-                        onChange={(e) => handleUpdateHint(index, { title: e.target.value })}
-                        placeholder={`Tipp ${index + 1}: Überschrift`}
-                        className="font-bold text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 flex-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                      />
+                      <span className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                        Tipp {index + 1}
+                      </span>
                     </div>
 
-                    {/* Hint Controls: Up, Down, Delete */}
+                    {/* Hint Controls: Up, Down, Delete with comfortable 36px touch targets */}
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         disabled={index === 0}
                         onClick={() => handleMoveHint(index, 'up')}
-                        title="Nach oben"
-                        className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30 rounded hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Nach oben schieben"
+                        className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-25 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                       >
                         <ArrowUp className="w-4 h-4" />
                       </button>
@@ -758,8 +729,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                         type="button"
                         disabled={index === hints.length - 1}
                         onClick={() => handleMoveHint(index, 'down')}
-                        title="Nach unten"
-                        className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30 rounded hover:bg-slate-200 dark:hover:bg-slate-800"
+                        title="Nach unten schieben"
+                        className="p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 disabled:opacity-25 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                       >
                         <ArrowDown className="w-4 h-4" />
                       </button>
@@ -767,11 +738,25 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                         type="button"
                         onClick={() => handleRemoveHint(index)}
                         title="Tipp löschen"
-                        className="p-1 text-rose-400 hover:text-rose-600 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                        className="p-2 text-rose-500 hover:text-rose-700 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors ml-1"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
+                  </div>
+
+                  {/* Title input on full-width row (never squished on phones) */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                      Tipp-Überschrift:
+                    </label>
+                    <input
+                      type="text"
+                      value={hint.title}
+                      onChange={(e) => handleUpdateHint(index, { title: e.target.value })}
+                      placeholder={`z.B. Tipp ${index + 1}: Denkanstoß zur Fragestellung`}
+                      className="w-full font-bold text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                    />
                   </div>
 
                   {/* Math Formula Helper for this hint */}
@@ -790,7 +775,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        Textinhalt (mit LaTeX-Formeln):
+                        Erklärung / Leitfrage (mit Mathe-Formeln in $formel$):
                       </label>
                       <button
                         type="button"
@@ -799,10 +784,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                             activeMathHelperHintIndex === index ? null : index
                           )
                         }
-                        className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 font-medium"
+                        className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 font-semibold p-1"
                       >
                         <Calculator className="w-3.5 h-3.5" />
-                        <span>Formeleditor öffnen</span>
+                        <span>Formel-Assistent</span>
                       </button>
                     </div>
 
@@ -811,22 +796,22 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                       value={hint.text}
                       onChange={(e) => handleUpdateHint(index, { text: e.target.value })}
                       placeholder="Erklärung, Denkanstoß oder Leitfrage eingeben..."
-                      className="w-full px-3.5 py-2 text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed"
                     />
 
                     {/* Realtime KaTeX text preview if text exists */}
-                    {hint.text && (
-                      <div className="p-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-700 dark:text-slate-300">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">
-                          Echtzeit-Vorschau:
+                    {hint.text && (hint.text.includes('$') || hint.text.includes('\\')) && (
+                      <div className="p-2.5 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl text-xs text-slate-800 dark:text-slate-200 space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 block">
+                          Formel-Vorschau:
                         </span>
                         <LaTeXRenderer content={hint.text} />
                       </div>
                     )}
                   </div>
 
-                  {/* PIN & Media Settings */}
-                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* PIN & Media Settings Grid */}
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {/* PIN Lock Configuration */}
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -835,6 +820,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                       </label>
                       <input
                         type="text"
+                        inputMode="numeric"
                         maxLength={4}
                         value={hint.pin || ''}
                         onChange={(e) => {
@@ -842,10 +828,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                           handleUpdateHint(index, { pin: val });
                         }}
                         placeholder="z.B. 1234 oder leer lassen"
-                        className="w-full px-3 py-1.5 text-xs font-mono bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2.5 text-base sm:text-sm font-mono bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                       />
                       <p className="text-[10px] text-slate-400">
-                        Falls gesetzt, muss der Schüler den Code eingeben, um den Tipp zu sehen.
+                        Falls gesetzt, müssen Schüler erst diesen Code eingeben.
                       </p>
                     </div>
 
@@ -862,7 +848,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                             mediaData: e.target.value === 'none' ? undefined : hint.mediaData,
                           })
                         }
-                        className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                       >
                         <option value="none">Kein Medium</option>
                         <option value="image">Bild / Skizze (Canvas-komprimiert)</option>
@@ -876,10 +862,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
                   {/* Media Specific Inputs */}
                   {hint.mediaType === 'image' && (
-                    <div className="p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {/* 1. Direct Native Smartphone Camera Capture */}
-                        <label className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg cursor-pointer transition shadow-2xs">
+                        <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer transition shadow-xs min-h-[42px] active:scale-[0.99]">
                           <Camera className="w-3.5 h-3.5 text-white" />
                           <span>Foto mit Smartphone-Kamera machen</span>
                           <input
@@ -891,20 +877,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                           />
                         </label>
 
-                        {/* 2. Live camera viewfinder */}
-                        <button
-                          type="button"
-                          onClick={() => setCameraModalTarget(index)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg border border-slate-200 dark:border-slate-700 transition"
-                        >
-                          <ScanLine className="w-3.5 h-3.5 text-indigo-500" />
-                          <span>Live-Sucher</span>
-                        </button>
-
-                        {/* 3. Pick from File / Gallery */}
-                        <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer transition">
+                        {/* 2. Pick from File / Gallery */}
+                        <label className="flex items-center justify-center gap-2 px-3 py-2.5 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 rounded-xl border border-slate-300 dark:border-slate-700 cursor-pointer transition min-h-[42px] active:scale-[0.99]">
                           <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Aus Galerie / Datei</span>
+                          <span>Aus Galerie / Datei wählen</span>
                           <input
                             type="file"
                             accept="image/*"
@@ -912,23 +888,23 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                             className="hidden"
                           />
                         </label>
+                      </div>
 
-                        {hint.mediaData && (
+                      {hint.mediaData && (
+                        <div className="pt-2 flex items-center justify-between">
+                          <img
+                            src={hint.mediaData}
+                            alt="Tipp Bild"
+                            className="max-h-40 object-contain rounded-lg border border-slate-200 dark:border-slate-800"
+                          />
                           <button
                             type="button"
                             onClick={() => handleUpdateHint(index, { mediaData: undefined })}
-                            className="text-xs text-rose-500 hover:text-rose-700 ml-auto"
+                            className="text-xs text-rose-500 hover:text-rose-700 font-semibold p-1"
                           >
                             Entfernen
                           </button>
-                        )}
-                      </div>
-                      {hint.mediaData && (
-                        <img
-                          src={hint.mediaData}
-                          alt="Tipp Bild"
-                          className="max-h-40 object-contain rounded-lg border border-slate-200 dark:border-slate-800"
-                        />
+                        </div>
                       )}
                     </div>
                   )}
@@ -968,7 +944,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                           handleUpdateHint(index, { mediaData: parsed });
                         }}
                         placeholder="https://www.youtube.com/watch?v=... oder https://youtu.be/..."
-                        className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg"
+                        className="w-full px-3 py-2 text-base sm:text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg"
                       />
                       <p className="text-[10px] text-slate-400">
                         Wird automatisch zu datenschutzfreundlichem youtube-nocookie.com/embed konvertiert.
@@ -996,7 +972,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                             ? 'https://www.geogebra.org/m/... oder <iframe>'
                             : 'https://h5p.org/h5p/embed/... oder <iframe>'
                         }
-                        className="w-full px-3 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg"
+                        className="w-full px-3 py-2 text-base sm:text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg"
                       />
                     </div>
                   )}
@@ -1008,44 +984,32 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             <button
               type="button"
               onClick={handleAddHint}
-              className="w-full py-2.5 border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-indigo-600 flex items-center justify-center gap-1.5 transition-colors"
+              className="w-full py-3.5 border-2 border-dashed border-indigo-300 dark:border-indigo-700 hover:border-indigo-500 rounded-2xl text-xs sm:text-sm font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/50 dark:bg-indigo-950/20 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center justify-center gap-2 transition-colors min-h-[48px]"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>Weiteren gestuften Tipp hinzufügen</span>
             </button>
           </div>
 
-          {/* Form Action Footer */}
-          <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3">
+          {/* Sticky Mobile-Friendly Action Footer */}
+          <div className="sticky bottom-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 -mx-3 sm:mx-0 -mb-3 sm:mb-0 flex items-center justify-between sm:justify-end gap-3 shadow-lg rounded-b-2xl">
             <button
               type="button"
               onClick={onCancel}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              className="px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors min-h-[44px]"
             >
               Abbrechen
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-2 transition-colors"
+              className="flex-1 sm:flex-none px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition-colors min-h-[44px] active:scale-[0.99]"
             >
               <Save className="w-4 h-4" />
               <span>Lernhilfe speichern</span>
             </button>
           </div>
         </div>
-      )}
-      {/* Camera Capture Modal */}
-      {cameraModalTarget !== null && (
-        <CameraCaptureModal
-          title={
-            cameraModalTarget === 'task'
-              ? 'Foto der Aufgabe / Schulbuchseite aufnehmen'
-              : `Foto für Tipp ${typeof cameraModalTarget === 'number' ? cameraModalTarget + 1 : ''} aufnehmen`
-          }
-          onCapture={handleCameraCapture}
-          onClose={() => setCameraModalTarget(null)}
-        />
       )}
     </div>
   );

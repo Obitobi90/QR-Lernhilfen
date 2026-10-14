@@ -51,6 +51,9 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(false);
 
+  // Teacher Preview vs Real Student Access
+  const [isTeacherPreview, setIsTeacherPreview] = useState<boolean>(false);
+
   // Apply dark mode class and data-theme to documentElement and body
   useEffect(() => {
     const root = document.documentElement;
@@ -75,6 +78,8 @@ export default function App() {
   const syncFromUrl = async () => {
     const params = new URLSearchParams(window.location.search);
     const idFromUrl = params.get('id');
+    const isPreviewParam = params.get('preview') === 'teacher';
+    setIsTeacherPreview(isPreviewParam);
 
     if (idFromUrl) {
       setStudentId(idFromUrl);
@@ -112,14 +117,16 @@ export default function App() {
     loadData();
   }, []);
 
-  // Student Navigation: Open Preview or Return to Teacher View
+  // Student Navigation: Open Preview from Teacher Dashboard
   const handleOpenStudentView = (id: string) => {
-    const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}`;
+    setIsTeacherPreview(true);
+    const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}&preview=teacher`;
     window.history.pushState({}, '', newUrl);
     syncFromUrl();
   };
 
-  const handleReturnToTeacher = () => {
+  const handleCloseTeacherPreview = () => {
+    setIsTeacherPreview(false);
     window.history.pushState({}, '', window.location.pathname);
     syncFromUrl();
   };
@@ -173,12 +180,14 @@ export default function App() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Der angeforderte Code existiert nicht mehr oder wurde von der Lehrkraft entfernt.
             </p>
-            <button
-              onClick={handleReturnToTeacher}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
-            >
-              Zurück zur Übersicht
-            </button>
+            {isTeacherPreview && (
+              <button
+                onClick={handleCloseTeacherPreview}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
+              >
+                Vorschau schließen
+              </button>
+            )}
           </div>
         </div>
       );
@@ -187,7 +196,8 @@ export default function App() {
     return (
       <StudentView
         item={studentItem}
-        onBackToTeacher={handleReturnToTeacher}
+        isTeacherPreview={isTeacherPreview}
+        onClosePreview={handleCloseTeacherPreview}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((prev) => !prev)}
       />

@@ -31,7 +31,6 @@ const MATH_SHORTCUTS = [
 
 export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFormula, onClose }) => {
   const [currentLatex, setCurrentLatex] = useState<string>('\\frac{a}{b}');
-  const [displayMode, setDisplayMode] = useState<boolean>(false);
   const mathfieldRef = useRef<HTMLDivElement>(null);
 
   // Initialize or mount MathLive if available
@@ -80,7 +79,7 @@ export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFo
 
   const handleInsert = () => {
     if (!currentLatex.trim()) return;
-    const formatted = displayMode ? `\n$$${currentLatex.trim()}$$\n` : `$${currentLatex.trim()}$`;
+    const formatted = `$${currentLatex.trim()}$`;
     onInsertFormula(formatted);
     if (onClose) onClose();
   };
@@ -106,17 +105,6 @@ export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFo
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Formel visuell bearbeiten oder Symbol-Buttons anklicken.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-600 dark:text-slate-400 flex items-center gap-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={displayMode}
-              onChange={(e) => setDisplayMode(e.target.checked)}
-              className="rounded text-indigo-600 focus:ring-indigo-500"
-            />
-            <span>Eigene Zeile ($$)</span>
-          </label>
         </div>
       </div>
 
