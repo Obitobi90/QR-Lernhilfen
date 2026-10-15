@@ -405,12 +405,205 @@ app.post('/api/stats/:lernhilfeId/reset', (req, res) => {
   return res.json({ success: true, stats: statsDb[lernhilfeId] });
 });
 
+// ==========================================
+// PERSISTENT LERNHILFEN REPOSITORY API
+// ==========================================
+const ITEMS_FILE = path.resolve(process.cwd(), 'lernhilfen_store.json');
+
+const INITIAL_SERVER_ITEMS = [
+  {
+    id: 'pythagoras-leiter-demo',
+    title: 'Aufgabe 1: Die Feuerwehrleiter an der Hauswand',
+    subject: 'Mathematik',
+    grade_level: 'Klasse 9',
+    group_name: 'Arbeitsblatt zum Satz des Pythagoras',
+    task_context:
+      'Eine 5 m lange Feuerwehrleiter wird an einer Hauswand angelehnt. Der Fußpunkt der Leiter steht 3 m von der Hauswand entfernt. In welcher Höhe $h$ berührt die Leiter die Wand?',
+    created_at: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
+    updated_at: new Date().toISOString(),
+    hints: [
+      {
+        id: 'h1',
+        title: 'Tipp 1: Rechtwinkliges Dreieck skizzieren',
+        text: 'Fertige eine saubere Skizze an! Hauswand, Erdboden und Leiter bilden zusammen ein rechtwinkliges Dreieck mit dem rechten Winkel $\\gamma = 90^\\circ$ zwischen Wand und Boden.\n\nIdentifiziere Katheten und Hypotenuse.',
+        mediaType: 'none',
+      },
+      {
+        id: 'h2',
+        title: 'Tipp 2: Mathematischen Satz auswählen',
+        text: 'In jedem rechtwinkligen Dreieck gilt der Satz des Pythagoras:\n$$a^2 + b^2 = c^2$$\nHierbei ist $c$ immer die Hypotenuse (die längste Seite gegenüber dem rechten Winkel – also die Leiter!).\n\nSetze die Werte ein:\n- Kathete $a = 3\\,\\text{m}$ (Abstand)\n- Kathete $b = h$ (gesuchte Höhe)\n- Hypotenuse $c = 5\\,\\text{m}$ (Leiterlänge)',
+        mediaType: 'youtube',
+        mediaData: 'https://www.youtube.com/watch?v=kY8c2_367gA',
+      },
+      {
+        id: 'h3',
+        title: 'Tipp 3: Gleichung nach der Höhe umstellen',
+        text: 'Stelle die Formel nach der gesuchten Kathete $h$ um:\n$$3^2 + h^2 = 5^2$$\n$$9 + h^2 = 25$$\nZiehe auf beiden Seiten $9$ ab und ziehe anschließend die Quadratwurzel $\\sqrt{\\dots}$!',
+        pin: '2024',
+        mediaType: 'none',
+      },
+    ],
+  },
+  {
+    id: 'pythagoras-fussball-demo',
+    title: 'Aufgabe 2: Diagonaler Pass im Fußballfeld',
+    subject: 'Mathematik',
+    grade_level: 'Klasse 9',
+    group_name: 'Arbeitsblatt zum Satz des Pythagoras',
+    task_context:
+      'Ein Fußballfeld hat eine Länge von $105\\,\\text{m}$ und eine Breite von $68\\,\\text{m}$. Ein Spieler schlägt einen weiten Diagonalpass von einer Eckfahne zur genau gegenüberliegenden Eckfahne. Wie lang ist dieser Pass (Luftlinie)?',
+    created_at: new Date(Date.now() - 3600000 * 24 * 2 + 120000).toISOString(),
+    updated_at: new Date().toISOString(),
+    hints: [
+      {
+        id: 'pfb1',
+        title: 'Tipp 1: Rechteck und Diagonale erkennen',
+        text: 'Ein Fußballfeld ist ein Rechteck. Wenn du von einer Ecke zur gegenüberliegenden Ecke ziehst, teilt die Diagonale $d$ das Feld in zwei kongruente rechtwinklige Dreiecke.',
+        mediaType: 'none',
+      },
+      {
+        id: 'pfb2',
+        title: 'Tipp 2: Pythagoras anwenden',
+        text: 'Die beiden Seitenlinien bilden die Katheten $a = 105\\,\\text{m}$ und $b = 68\\,\\text{m}$. Die Diagonale $d$ ist die gesuchte Hypotenuse:\n$$d^2 = a^2 + b^2 = 105^2 + 68^2$$',
+        mediaType: 'none',
+      },
+    ],
+  },
+  {
+    id: 'freier-fall-physik',
+    title: 'Physik: Freier Fall & Bremsweg',
+    subject: 'Physik',
+    grade_level: 'Klasse 10',
+    group_name: 'Stationenlernen Mechanik',
+    task_context:
+      'Ein Stein fällt von einer $45\\,\\text{m}$ hohen Klippe ins Meer. Berechne die Fallzeit $t$ und die Auftreffgeschwindigkeit $v$, wenn der Luftwiderstand vernachlässigt wird ($g \\approx 9{,}81\\,\\text{m/s}^2$).',
+    created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+    updated_at: new Date().toISOString(),
+    hints: [
+      {
+        id: 'pf1',
+        title: 'Tipp 1: Bewegungsart bestimmen',
+        text: 'Es handelt sich um eine gleichmäßig beschleunigte Bewegung ohne Anfangsgeschwindigkeit ($v_0 = 0$). Die Beschleunigung ist die Erdbeschleunigung $g = 9{,}81\\,\\text{m/s}^2$.',
+        mediaType: 'none',
+      },
+      {
+        id: 'pf2',
+        title: 'Tipp 2: Formel für die Fallstrecke',
+        text: 'Das Weg-Zeit-Gesetz lautet:\n$$s(t) = \\frac{1}{2} \\cdot g \\cdot t^2$$\nMultipliziere mit $2$ und teile durch $g$, um nach der Zeit $t$ aufzulösen:\n$$t = \\sqrt{\\frac{2s}{g}}$$',
+        mediaType: 'geogebra',
+        mediaData: 'https://www.geogebra.org/m/k3mqfqea',
+      },
+      {
+        id: 'pf3',
+        title: 'Tipp 3: Geschwindigkeit berechnen',
+        text: 'Sobald du die Fallzeit $t$ berechnet hast (ca. $3\\,\\text{Sekunden}$), kannst du die Geschwindigkeit berechnen mit:\n$$v = g \\cdot t$$\nDenke an die Einheit $\\text{m/s}$ und multipliziere optional mit $3{,}6$ für $\\text{km/h}$.',
+        mediaType: 'none',
+      },
+    ],
+  },
+  {
+    id: 'chemie-stoechiometrie',
+    title: 'Chemie: Reaktionsgleichung ausgleichen',
+    subject: 'Chemie',
+    grade_level: 'EF',
+    task_context:
+      'Gleiche die Verbrennung von Propan-Gas mit Sauerstoff zu Kohlenstoffdioxid und Wasser stöchiometrisch aus:\n$$\\dots\\,\\text{C}_3\\text{H}_8 + \\dots\\,\\text{O}_2 \\longrightarrow \\dots\\,\\text{CO}_2 + \\dots\\,\\text{H}_2\\text{O}$$',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    hints: [
+      {
+        id: 'ch1',
+        title: 'Tipp 1: Reihenfolge beim Ausgleichen',
+        text: 'Beginne mit den Kohlenstoffatomen (C), gleiche danach die Wasserstoffatome (H) aus und zähle erst ganz zum Schluss die Sauerstoffatome (O) auf beiden Seiten zusammen.',
+        mediaType: 'none',
+      },
+      {
+        id: 'ch2',
+        title: 'Tipp 2: C und H ausgleichen',
+        text: 'Links haben wir $3$ C-Atome $\\Rightarrow$ setze rechts eine $3$ vor $\\text{CO}_2$.\nLinks haben wir $8$ H-Atome $\\Rightarrow$ setze rechts eine $4$ vor $\\text{H}_2\\text{O}$ (denn $4 \\times 2 = 8$).\n\nWie viele O-Atome hast du nun auf der rechten Seite insgesamt?',
+        mediaType: 'none',
+      },
+    ],
+  },
+];
+
+let itemsDb: any[] = [];
+try {
+  if (fs.existsSync(ITEMS_FILE)) {
+    const raw = fs.readFileSync(ITEMS_FILE, 'utf-8');
+    itemsDb = JSON.parse(raw);
+    if (!Array.isArray(itemsDb) || itemsDb.length === 0) {
+      itemsDb = INITIAL_SERVER_ITEMS;
+      fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
+    }
+  } else {
+    itemsDb = INITIAL_SERVER_ITEMS;
+    fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
+  }
+} catch (e) {
+  itemsDb = INITIAL_SERVER_ITEMS;
+}
+
+function saveItemsToDisk() {
+  try {
+    fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Could not save items to disk:', e);
+  }
+}
+
+// 1. Get all Lernhilfen
+app.get('/api/lernhilfen', (_req, res) => {
+  return res.json({ items: itemsDb });
+});
+
+// 2. Get specific Lernhilfe by id
+app.get('/api/lernhilfen/:id', (req, res) => {
+  const item = itemsDb.find((i) => i.id === req.params.id);
+  if (!item) {
+    return res.status(404).json({ error: 'Lernhilfe nicht gefunden' });
+  }
+  return res.json({ item });
+});
+
+// 3. Save or update Lernhilfe
+app.post('/api/lernhilfen', (req, res) => {
+  const newItem = req.body;
+  if (!newItem || !newItem.id || !newItem.title) {
+    return res.status(400).json({ error: 'Ungültige Daten' });
+  }
+
+  const idx = itemsDb.findIndex((i) => i.id === newItem.id);
+  if (idx >= 0) {
+    itemsDb[idx] = { ...newItem, updated_at: new Date().toISOString() };
+  } else {
+    itemsDb.unshift({
+      ...newItem,
+      created_at: newItem.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  saveItemsToDisk();
+  return res.json({ success: true, item: newItem });
+});
+
+// 4. Delete Lernhilfe by id
+app.delete('/api/lernhilfen/:id', (req, res) => {
+  const { id } = req.params;
+  itemsDb = itemsDb.filter((i) => i.id !== id);
+  saveItemsToDisk();
+  return res.json({ success: true });
+});
+
 async function startServer() {
   const isDev = process.env.NODE_ENV !== 'production';
 
   if (isDev) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

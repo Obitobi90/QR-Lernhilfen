@@ -83,6 +83,11 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
                 <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
                   {item.subject || 'Allgemein'}
                 </span>
+                {item.group_name && (
+                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 rounded-md border border-purple-200 dark:border-purple-800">
+                    📋 {item.group_name}
+                  </span>
+                )}
                 {item.grade_level && (
                   <span className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md border border-slate-200 dark:border-slate-700">
                     {item.grade_level}

@@ -23,6 +23,7 @@ import {
   QrCode,
   ThumbsUp,
   ThumbsDown,
+  FileSpreadsheet,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -57,6 +58,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const [unlockedPins, setUnlockedPins] = useState<Record<string, boolean>>({});
   // PIN input buffer per hint
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
+  // PIN error indicators per hint
+  const [pinErrors, setPinErrors] = useState<Record<string, boolean>>({});
   // User votes per hint (Thumbs up / Thumbs down)
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
 
@@ -197,6 +200,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
         {/* Task Header Box */}
         <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            {item.group_name && (
+              <span className="px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-semibold border border-purple-200 dark:border-purple-800/80 flex items-center gap-1">
+                <FileSpreadsheet className="w-3 h-3 text-purple-500" />
+                <span>{item.group_name}</span>
+              </span>
+            )}
             {item.subject && (
               <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold">
                 {item.subject}

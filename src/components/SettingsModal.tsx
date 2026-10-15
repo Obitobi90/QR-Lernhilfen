@@ -391,21 +391,28 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {!passkeyEnrolled ? (
-                  <button
-                    type="button"
-                    onClick={handleRegisterPasskey}
-                    disabled={passkeyActionLoading || !biometricsSupported}
-                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
-                  >
-                    <Fingerprint className="w-3.5 h-3.5" />
-                    <span>
-                      {passkeyActionLoading
-                        ? 'Warte auf Eingabe...'
-                        : !biometricsSupported
-                        ? 'Biometrie wird nicht unterstützt'
-                        : `${deviceLabel} jetzt einrichten`}
-                    </span>
-                  </button>
+                  <div className="space-y-1.5">
+                    <button
+                      type="button"
+                      onClick={handleRegisterPasskey}
+                      disabled={passkeyActionLoading || !biometricsSupported}
+                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      <Fingerprint className="w-3.5 h-3.5" />
+                      <span>
+                        {passkeyActionLoading
+                          ? 'Warte auf Eingabe...'
+                          : !biometricsSupported
+                          ? 'Im Vorschau-Frame nicht verfügbar'
+                          : `${deviceLabel} jetzt einrichten`}
+                      </span>
+                    </button>
+                    {!biometricsSupported && (
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Hinweis: Browser erlauben Passkeys/Biometrie aus Sicherheitsgründen nur im Hauptfenster oder der installierten Web-App (PWA), nicht im eingebetteten Vorschaufenster.
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <button

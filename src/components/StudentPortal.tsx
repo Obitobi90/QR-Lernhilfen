@@ -24,6 +24,7 @@ import {
   Sparkles,
   Fingerprint,
   Check,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface StudentPortalProps {
@@ -43,6 +44,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 }) => {
   const [enteredCode, setEnteredCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
+  const [multipleMatches, setMultipleMatches] = useState<Lernhilfe[]>([]);
 
   // Teacher PIN & Biometrics Modal State
   const [showTeacherPinModal, setShowTeacherPinModal] = useState(false);
@@ -87,6 +89,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const handleCodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setCodeError(null);
+    setMultipleMatches([]);
     const cleaned = enteredCode.trim().toLowerCase();
     if (!cleaned) return;
 
@@ -100,11 +103,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
       return;
     }
 
-    // Check partial ID match or title match
+    // Check partial ID match, title match, or worksheet group_name match
     const matches = items.filter(
       (item) =>
         item.id.toLowerCase().includes(cleaned) ||
-        item.title.toLowerCase().includes(cleaned)
+        item.title.toLowerCase().includes(cleaned) ||
+        (item.group_name && item.group_name.toLowerCase().includes(cleaned))
     );
 
     if (matches.length === 1) {
@@ -113,9 +117,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     }
 
     if (matches.length > 1) {
-      setCodeError(
-        `Mehrere Treffer gefunden (${matches.length}). Bitte gib den genauen Code ein.`
-      );
+      setMultipleMatches(matches);
       return;
     }
 
@@ -244,6 +246,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                   onChange={(e) => {
                     setEnteredCode(e.target.value);
                     if (codeError) setCodeError(null);
+                    if (multipleMatches.length > 0) setMultipleMatches([]);
                   }}
                   placeholder="z. B. leiter, pythagoras, fall..."
                   className="w-full pl-9 pr-3.5 py-3 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
@@ -257,6 +260,40 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
+
+            {/* List of multiple matching tasks (e.g. from an Arbeitsblatt) */}
+            {multipleMatches.length > 0 && (
+              <div className="p-3 bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl space-y-2 animate-in fade-in">
+                <span className="text-xs font-bold text-purple-900 dark:text-purple-300 block">
+                  Mehrere passende Aufgaben gefunden ({multipleMatches.length}). Wähle deine Aufgabe:
+                </span>
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {multipleMatches.map((match) => (
+                    <button
+                      key={match.id}
+                      type="button"
+                      onClick={() => onOpenItem(match.id)}
+                      className="w-full p-2.5 bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-800/60 hover:border-purple-400 rounded-lg flex items-center justify-between text-left gap-2 transition-all hover:shadow-xs group"
+                    >
+                      <div className="min-w-0">
+                        {match.group_name && (
+                          <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 block truncate">
+                            📋 {match.group_name}
+                          </span>
+                        )}
+                        <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                          {match.title}
+                        </h4>
+                      </div>
+                      <span className="px-2 py-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded-md shrink-0 flex items-center gap-1 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                        <span>Öffnen</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {codeError && (
               <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-start gap-2 animate-in fade-in">

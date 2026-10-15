@@ -7,8 +7,10 @@ const STORAGE_KEY_ITEMS = 'lernhilfen_local_items_v1';
 export const SAMPLE_LERNHILFEN: Lernhilfe[] = [
   {
     id: 'pythagoras-leiter-demo',
-    title: 'Satz des Pythagoras: Die Feuerwehrleiter',
+    title: 'Aufgabe 1: Die Feuerwehrleiter an der Hauswand',
     subject: 'Mathematik',
+    grade_level: 'Klasse 9',
+    group_name: 'Arbeitsblatt zum Satz des Pythagoras',
     task_context: 'Eine 5 m lange Feuerwehrleiter wird an einer Hauswand angelehnt. Der Fußpunkt der Leiter steht 3 m von der Hauswand entfernt. In welcher Höhe $h$ berührt die Leiter die Wand?',
     created_at: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
     updated_at: new Date().toISOString(),
@@ -16,7 +18,7 @@ export const SAMPLE_LERNHILFEN: Lernhilfe[] = [
       {
         id: 'h1',
         title: 'Tipp 1: Rechtwinkliges Dreieck skizzieren',
-        text: 'Fertige eine saubere Skizze an! Hauswand, Erdboden und Leiter bilden zusammen ein rechtwinkliges Dreieck mit dem rechten Winkel $\\gamma = 90^\\circ$ zwischen Wand und Boden.\n\nIdentifiziere:',
+        text: 'Fertige eine saubere Skizze an! Hauswand, Erdboden und Leiter bilden zusammen ein rechtwinkliges Dreieck mit dem rechten Winkel $\\gamma = 90^\\circ$ zwischen Wand und Boden.\n\nIdentifiziere Katheten und Hypotenuse.',
         mediaType: 'none',
       },
       {
@@ -36,9 +38,35 @@ export const SAMPLE_LERNHILFEN: Lernhilfe[] = [
     ],
   },
   {
+    id: 'pythagoras-fussball-demo',
+    title: 'Aufgabe 2: Diagonaler Pass im Fußballfeld',
+    subject: 'Mathematik',
+    grade_level: 'Klasse 9',
+    group_name: 'Arbeitsblatt zum Satz des Pythagoras',
+    task_context: 'Ein Fußballfeld hat eine Länge von $105\\,\\text{m}$ und eine Breite von $68\\,\\text{m}$. Ein Spieler schlägt einen weiten Diagonalpass von einer Eckfahne zur genau gegenüberliegenden Eckfahne. Wie lang ist dieser Pass (Luftlinie)?',
+    created_at: new Date(Date.now() - 3600000 * 24 * 2 + 120000).toISOString(),
+    updated_at: new Date().toISOString(),
+    hints: [
+      {
+        id: 'pfb1',
+        title: 'Tipp 1: Rechteck und Diagonale erkennen',
+        text: 'Ein Fußballfeld ist ein Rechteck. Wenn du von einer Ecke zur gegenüberliegenden Ecke ziehst, teilt die Diagonale $d$ das Feld in zwei kongruente rechtwinklige Dreiecke.',
+        mediaType: 'none',
+      },
+      {
+        id: 'pfb2',
+        title: 'Tipp 2: Pythagoras anwenden',
+        text: 'Die beiden Seitenlinien bilden die Katheten $a = 105\\,\\text{m}$ und $b = 68\\,\\text{m}$. Die Diagonale $d$ ist die gesuchte Hypotenuse:\n$$d^2 = a^2 + b^2 = 105^2 + 68^2$$',
+        mediaType: 'none',
+      },
+    ],
+  },
+  {
     id: 'freier-fall-physik',
     title: 'Physik: Freier Fall & Bremsweg',
     subject: 'Physik',
+    grade_level: 'Klasse 10',
+    group_name: 'Stationenlernen Mechanik',
     task_context: 'Ein Stein fällt von einer $45\\,\\text{m}$ hohen Klippe ins Meer. Berechne die Fallzeit $t$ und die Auftreffgeschwindigkeit $v$, wenn der Luftwiderstand vernachlässigt wird ($g \\approx 9{,}81\\,\\text{m/s}^2$).',
     created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
     updated_at: new Date().toISOString(),
@@ -68,6 +96,7 @@ export const SAMPLE_LERNHILFEN: Lernhilfe[] = [
     id: 'chemie-stoechiometrie',
     title: 'Chemie: Reaktionsgleichung ausgleichen',
     subject: 'Chemie',
+    grade_level: 'EF',
     task_context: 'Gleiche die Verbrennung von Propan-Gas mit Sauerstoff zu Kohlenstoffdioxid und Wasser stöchiometrisch aus:\n$$\\dots\\,\\text{C}_3\\text{H}_8 + \\dots\\,\\text{O}_2 \\longrightarrow \\dots\\,\\text{CO}_2 + \\dots\\,\\text{H}_2\\text{O}$$',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -100,7 +129,7 @@ export function getSupabaseSettings(): SupabaseSettings {
       return {
         url: parsed.url || DEFAULT_SUPABASE_URL,
         anonKey: parsed.anonKey || DEFAULT_SUPABASE_ANON_KEY,
-        enabled: parsed.enabled !== undefined ? parsed.enabled : true,
+        enabled: parsed.enabled === true, // Only true if user explicitly enabled it
       };
     }
   } catch (e) {
@@ -109,7 +138,7 @@ export function getSupabaseSettings(): SupabaseSettings {
   return {
     url: DEFAULT_SUPABASE_URL,
     anonKey: DEFAULT_SUPABASE_ANON_KEY,
-    enabled: true,
+    enabled: false,
   };
 }
 
@@ -165,8 +194,23 @@ function saveLocalLernhilfen(items: Lernhilfe[]): void {
   localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
 }
 
-// Unified Database API (Supabase or LocalStorage)
+// Unified Database API (Server Disk Store + LocalStorage + optional Supabase)
 export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
+  // 1. Try server disk store first (/api/lernhilfen)
+  try {
+    const res = await fetch('/api/lernhilfen');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.items)) {
+        saveLocalLernhilfen(data.items);
+        return data.items;
+      }
+    }
+  } catch (err) {
+    console.warn('Server /api/lernhilfen fetch error, falling back to local storage:', err);
+  }
+
+  // 2. Try Supabase if user explicitly enabled it
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -175,53 +219,47 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn('Supabase fetch error, using local fallback:', error.message);
-        return getLocalLernhilfen();
-      }
-
-      if (data && data.length > 0) {
-        // Map database row to Lernhilfe interface
-        return data.map((row: any) => ({
+      if (!error && data && data.length > 0) {
+        const mapped = data.map((row: any) => ({
           id: row.id,
           title: row.title || 'Ohne Titel',
           subject: row.subject || 'Allgemein',
+          grade_level: row.grade_level || undefined,
+          group_name: row.group_name || undefined,
           task_context: row.task_context || '',
           task_image: row.task_image || undefined,
           hints: Array.isArray(row.hints) ? row.hints : [],
           created_at: row.created_at || new Date().toISOString(),
           updated_at: row.updated_at || new Date().toISOString(),
         }));
-      }
-
-      // If table exists but is empty, seed initial sample cards to Supabase
-      if (data && data.length === 0) {
-        try {
-          const seedPayload = SAMPLE_LERNHILFEN.map((item) => ({
-            id: item.id,
-            title: item.title,
-            subject: item.subject || 'Allgemein',
-            task_context: item.task_context,
-            task_image: item.task_image || null,
-            hints: item.hints,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-          }));
-          await supabase.from('lernhilfen').upsert(seedPayload);
-          return SAMPLE_LERNHILFEN;
-        } catch (seedErr) {
-          console.warn('Auto-seed into Supabase failed:', seedErr);
-        }
+        saveLocalLernhilfen(mapped);
+        return mapped;
       }
     } catch (e) {
-      console.warn('Supabase request failed, falling back to local storage:', e);
+      console.warn('Supabase fetch failed, falling back to local storage:', e);
     }
   }
 
+  // 3. Fallback to localStorage
   return getLocalLernhilfen();
 }
 
 export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> {
+  // 1. Check local items
+  const localItems = getLocalLernhilfen();
+  const localFound = localItems.find((item) => item.id === id);
+  if (localFound) return localFound;
+
+  // 2. Check server disk store
+  try {
+    const res = await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.item) return data.item;
+    }
+  } catch (e) {}
+
+  // 3. Check Supabase if enabled
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
@@ -236,6 +274,8 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
           id: data.id,
           title: data.title || '',
           subject: data.subject || '',
+          grade_level: data.grade_level || undefined,
+          group_name: data.group_name || undefined,
           task_context: data.task_context || '',
           task_image: data.task_image || undefined,
           hints: Array.isArray(data.hints) ? data.hints : [],
@@ -244,22 +284,20 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
         };
       }
     } catch (e) {
-      console.warn('Supabase fetch by ID failed, falling back to local storage:', e);
+      console.warn('Supabase fetch by ID failed:', e);
     }
   }
 
-  const items = getLocalLernhilfen();
-  return items.find((item) => item.id === id) || null;
+  return null;
 }
 
 export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
-  const supabase = getSupabaseClient();
   const updatedItem: Lernhilfe = {
     ...item,
     updated_at: new Date().toISOString(),
   };
 
-  // Always update local storage so data is safely backed up
+  // Always update local storage first so UI is immediately updated and offline resilient
   const localItems = getLocalLernhilfen();
   const existingIdx = localItems.findIndex((x) => x.id === item.id);
   if (existingIdx >= 0) {
@@ -269,24 +307,36 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
   }
   saveLocalLernhilfen(localItems);
 
+  // Sync with server disk store
+  try {
+    await fetch('/api/lernhilfen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem),
+    });
+  } catch (e) {
+    console.warn('Could not sync item to server disk store:', e);
+  }
+
+  // Sync with Supabase if explicitly enabled
+  const supabase = getSupabaseClient();
   if (supabase) {
     try {
       const payload = {
         id: updatedItem.id,
         title: updatedItem.title,
         subject: updatedItem.subject || 'Allgemein',
+        grade_level: updatedItem.grade_level || null,
+        group_name: updatedItem.group_name || null,
         task_context: updatedItem.task_context,
         task_image: updatedItem.task_image || null,
         hints: updatedItem.hints,
         updated_at: updatedItem.updated_at,
       };
 
-      const { error } = await supabase.from('lernhilfen').upsert(payload);
-      if (error) {
-        console.warn('Supabase upsert warning:', error.message);
-      }
+      await supabase.from('lernhilfen').upsert(payload);
     } catch (e) {
-      console.error('Supabase upsert failed:', e);
+      console.warn('Supabase upsert warning:', e);
     }
   }
 
@@ -294,16 +344,26 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
 }
 
 export async function deleteLernhilfe(id: string): Promise<void> {
-  // Delete from local storage
+  // Delete from local storage immediately
   const localItems = getLocalLernhilfen().filter((x) => x.id !== id);
   saveLocalLernhilfen(localItems);
 
+  // Delete from server disk store
+  try {
+    await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  } catch (e) {
+    console.warn('Could not delete item from server store:', e);
+  }
+
+  // Delete from Supabase if explicitly enabled
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
       await supabase.from('lernhilfen').delete().eq('id', id);
     } catch (e) {
-      console.error('Supabase delete failed:', e);
+      console.warn('Supabase delete failed:', e);
     }
   }
 }

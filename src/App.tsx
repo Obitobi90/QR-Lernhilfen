@@ -12,6 +12,7 @@ import { StudentPortal } from './components/StudentPortal';
 import { TeacherView } from './components/TeacherView';
 import { LernhilfeEditor } from './components/LernhilfeEditor';
 import { QrCodeModal } from './components/QrCodeModal';
+import { WorksheetQrModal } from './components/WorksheetQrModal';
 import { StatsModal } from './components/StatsModal';
 import { SettingsModal } from './components/SettingsModal';
 import {
@@ -28,6 +29,10 @@ import {
   HardDrive,
   RefreshCw,
   Lock,
+  Check,
+  AlertTriangle,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 export default function App() {
@@ -53,7 +58,12 @@ export default function App() {
   // Modals & Editor states
   const [editingItem, setEditingItem] = useState<Lernhilfe | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
+  const [groupPresetForNew, setGroupPresetForNew] = useState<string | undefined>(undefined);
   const [qrModalItem, setQrModalItem] = useState<Lernhilfe | null>(null);
+  const [worksheetQrModal, setWorksheetQrModal] = useState<{
+    groupName: string;
+    items: Lernhilfe[];
+  } | null>(null);
   const [statsModalItem, setStatsModalItem] = useState<Lernhilfe | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(false);
@@ -63,6 +73,19 @@ export default function App() {
 
   // Teacher Authentication state (protects overview, create, edit, delete against student URL manipulation)
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState<boolean>(() => isTeacherSessionActive());
+
+  // Toast notification state
+  const [toast, setToast] = useState<{
+    message: string;
+    type: 'success' | 'info' | 'error';
+  } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((current) => (current?.message === message ? null : current));
+    }, 3500);
+  };
 
   // Apply dark mode class and data-theme to documentElement and body
   useEffect(() => {
@@ -149,29 +172,63 @@ export default function App() {
     syncFromUrl();
   };
 
-  // CRUD actions
+  // CRUD actions with immediate optimistic updates and toast notifications
   const handleSaveLernhilfe = async (item: Lernhilfe) => {
-    await saveLernhilfe(item);
+    // Optimistically update list
+    setItems((prev) => {
+      const idx = prev.findIndex((x) => x.id === item.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = item;
+        return copy;
+      }
+      return [item, ...prev];
+    });
     setIsCreatingNew(false);
     setEditingItem(null);
-    await loadData();
+    showToast(`„${item.title}“ wurde gespeichert!`, 'success');
+
+    try {
+      await saveLernhilfe(item);
+    } catch (e) {
+      console.error('Save failed:', e);
+      showToast('Fehler beim Speichern der Lernhilfe.', 'error');
+    }
   };
 
   const handleDeleteLernhilfe = async (id: string) => {
-    await deleteLernhilfe(id);
-    await loadData();
+    const itemToDelete = items.find((i) => i.id === id);
+    // Optimistically remove from list immediately
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    showToast(`„${itemToDelete?.title || 'Lernhilfe'}“ wurde gelöscht.`, 'info');
+
+    try {
+      await deleteLernhilfe(id);
+    } catch (e) {
+      console.error('Delete failed:', e);
+      showToast('Fehler beim Löschen.', 'error');
+    }
   };
 
   const handleDuplicateLernhilfe = async (item: Lernhilfe) => {
     const duplicated: Lernhilfe = {
       ...item,
-      id: 'lh-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      id: 'lh-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
       title: `${item.title} (Kopie)`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    await saveLernhilfe(duplicated);
-    await loadData();
+
+    // Optimistically prepend to list immediately
+    setItems((prev) => [duplicated, ...prev]);
+    showToast(`„${duplicated.title}“ erfolgreich dupliziert!`, 'success');
+
+    try {
+      await saveLernhilfe(duplicated);
+    } catch (e) {
+      console.error('Duplicate failed:', e);
+      showToast('Fehler beim Duplizieren.', 'error');
+    }
   };
 
   // 1. If student mode is active (?id=...)
@@ -328,22 +385,48 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
         {isCreatingNew || editingItem ? (
           <LernhilfeEditor
-            initialItem={editingItem}
-            onSave={handleSaveLernhilfe}
+            initialItem={
+              editingItem ||
+              (groupPresetForNew
+                ? {
+                    id: '',
+                    title: '',
+                    group_name: groupPresetForNew,
+                    task_context: '',
+                    hints: [],
+                    created_at: '',
+                    updated_at: '',
+                  }
+                : null)
+            }
+            existingGroups={Array.from(
+              new Set(items.map((i) => i.group_name?.trim()).filter(Boolean))
+            ) as string[]}
+            onSave={(item) => {
+              handleSaveLernhilfe(item);
+              setGroupPresetForNew(undefined);
+            }}
             onCancel={() => {
               setIsCreatingNew(false);
               setEditingItem(null);
+              setGroupPresetForNew(undefined);
             }}
             onOpenSettings={() => setIsSettingsOpen(true)}
           />
         ) : (
           <TeacherView
             items={items}
-            onCreateNew={() => setIsCreatingNew(true)}
+            onCreateNew={(groupPreset) => {
+              setGroupPresetForNew(groupPreset);
+              setIsCreatingNew(true);
+            }}
             onEdit={(item) => setEditingItem(item)}
             onDuplicate={handleDuplicateLernhilfe}
             onDelete={handleDeleteLernhilfe}
             onOpenQr={(item) => setQrModalItem(item)}
+            onOpenWorksheetQr={(groupName, groupItems) =>
+              setWorksheetQrModal({ groupName, items: groupItems })
+            }
             onOpenStats={(item) => setStatsModalItem(item)}
             onOpenPreview={handleOpenStudentView}
             onOpenSettings={() => setIsSettingsOpen(true)}
@@ -363,9 +446,30 @@ export default function App() {
       {qrModalItem && (
         <QrCodeModal
           item={qrModalItem}
+          allWorksheetItems={
+            qrModalItem.group_name
+              ? items.filter((i) => i.group_name === qrModalItem.group_name)
+              : undefined
+          }
+          onOpenWorksheetQr={(groupName, groupItems) => {
+            setQrModalItem(null);
+            setWorksheetQrModal({ groupName, items: groupItems });
+          }}
           onClose={() => setQrModalItem(null)}
           onOpenPreview={(id) => {
             setQrModalItem(null);
+            handleOpenStudentView(id);
+          }}
+        />
+      )}
+
+      {worksheetQrModal && (
+        <WorksheetQrModal
+          groupName={worksheetQrModal.groupName}
+          items={worksheetQrModal.items}
+          onClose={() => setWorksheetQrModal(null)}
+          onOpenPreview={(id) => {
+            setWorksheetQrModal(null);
             handleOpenStudentView(id);
           }}
         />
@@ -387,6 +491,39 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Floating Action Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto">
+          <div
+            className={`px-4 py-3 rounded-2xl shadow-xl border text-xs font-semibold flex items-center gap-3 ${
+              toast.type === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'
+                : toast.type === 'error'
+                ? 'bg-rose-50 dark:bg-rose-950 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800'
+                : 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-slate-700 dark:border-slate-300'
+            }`}
+          >
+            {toast.type === 'success' && (
+              <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            )}
+            {toast.type === 'error' && (
+              <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+            )}
+            {toast.type === 'info' && (
+              <Trash2 className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
+            )}
+            <span className="max-w-xs">{toast.message}</span>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors ml-1"
+            >
+              <X className="w-3.5 h-3.5 opacity-70" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};

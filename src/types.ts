@@ -14,6 +14,7 @@ export interface Lernhilfe {
   title: string;
   subject?: string;
   grade_level?: string; // Jahrgangsstufe (z. B. "Klasse 7", "Klasse 9", "EF", "Q1")
+  group_name?: string; // Optionale Gruppierung / Arbeitsblatt-Name (z. B. "Arbeitsblatt zum Satz des Pythagoras")
   task_context: string;
   task_image?: string;
   hints: Hint[];

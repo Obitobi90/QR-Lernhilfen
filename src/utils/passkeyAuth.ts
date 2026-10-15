@@ -43,11 +43,45 @@ export function getBiometricDeviceLabel(): string {
 }
 
 /**
- * Checks if WebAuthn and platform authenticator (Fingerprint, TouchID, Windows Hello) are supported.
+ * Checks whether the current document / frame is allowed by Permissions Policy to use WebAuthn.
+ * Cross-origin iframes (such as web preview environments) disallow publickey-credentials-create by default.
+ */
+export function isWebAuthnPermittedByDocument(): boolean {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return false;
+  }
+
+  // If running inside an iframe (window.self !== window.top)
+  if (window.self !== window.top) {
+    const doc = document as any;
+    const policy = doc.permissionsPolicy || doc.featurePolicy;
+    if (policy && typeof policy.allowsFeature === 'function') {
+      try {
+        const createAllowed = policy.allowsFeature('publickey-credentials-create');
+        const getAllowed = policy.allowsFeature('publickey-credentials-get');
+        return Boolean(createAllowed && getAllowed);
+      } catch (e) {
+        return false;
+      }
+    }
+    // Cross-origin iframe without explicit permissions policy delegation
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks if WebAuthn and platform authenticator (Fingerprint, TouchID, Windows Hello) are supported
+ * AND permitted in the current window/document context.
  */
 export async function isBiometricsSupported(): Promise<boolean> {
   try {
     if (typeof window === 'undefined' || !window.isSecureContext) {
+      return false;
+    }
+    // Check if current iframe/document allows publickey-credentials
+    if (!isWebAuthnPermittedByDocument()) {
       return false;
     }
     if (typeof window.PublicKeyCredential === 'undefined') {
@@ -100,12 +134,20 @@ export async function registerPasskey(): Promise<{
   error?: string;
 }> {
   try {
+    if (!isWebAuthnPermittedByDocument()) {
+      return {
+        success: false,
+        error:
+          'Biometrische Authentifizierung (Passkeys / Fingerabdruck) ist im eingebetteten iFrame-Vorschaufenster durch Browser-Sicherheitsrichtlinien deaktiviert. Bitte öffne die Web-App direkt in einem regulären Tab oder installiere sie als PWA.',
+      };
+    }
+
     const supported = await isBiometricsSupported();
     if (!supported) {
       return {
         success: false,
         error:
-          'Biometrische Authentifizierung (Fingerabdruck / Windows Hello) wird auf diesem Gerät oder Browser nicht unterstützt.',
+          'Biometrische Authentifizierung (Fingerabdruck / Windows Hello) wird auf diesem Gerät oder im aktuellen Browserfenster nicht unterstützt.',
       };
     }
 
@@ -161,7 +203,21 @@ export async function registerPasskey(): Promise<{
 
     return { success: true };
   } catch (err: any) {
-    console.error('Passkey registration error:', err);
+    const msg = String(err?.message || '');
+    const isFrameError =
+      msg.includes('publickey-credentials-create') ||
+      msg.includes('Permissions Policy') ||
+      msg.includes('feature is not enabled');
+
+    if (isFrameError) {
+      console.warn('WebAuthn registration not permitted in this frame:', msg);
+      return {
+        success: false,
+        error:
+          'Passkeys sind im eingebetteten Vorschaufenster durch Browser-Sicherheitsrichtlinien blockiert. Öffne die App direkt in einem regulären Tab oder installiere sie als PWA.',
+      };
+    }
+
     if (err.name === 'NotAllowedError') {
       return {
         success: false,
@@ -169,17 +225,19 @@ export async function registerPasskey(): Promise<{
           'Die Fingerabdruck- / Passkey-Abfrage wurde abgebrochen oder das Zeitlimit ist abgelaufen.',
       };
     }
+
     if (err.name === 'SecurityError') {
       return {
         success: false,
         error:
-          'Sicherheitsbeschränkung im aktuellen Kontext. Tipp: Bitte öffne die App in einem regulären Tab oder installiere sie als PWA.',
+          'Sicherheitsbeschränkung im aktuellen Kontext. Bitte öffne die App in einem regulären Tab oder installiere sie als PWA.',
       };
     }
+
+    console.warn('Passkey registration failed:', err);
     return {
       success: false,
-      error:
-        err.message || 'Passkey-Erstellung fehlgeschlagen. Bitte nutze die PIN.',
+      error: err.message || 'Passkey-Erstellung fehlgeschlagen. Bitte nutze die PIN.',
     };
   }
 }
@@ -192,6 +250,14 @@ export async function authenticateWithPasskey(): Promise<{
   error?: string;
 }> {
   try {
+    if (!isWebAuthnPermittedByDocument()) {
+      return {
+        success: false,
+        error:
+          'Passkey-Authentifizierung ist im iFrame-Vorschaufenster blockiert. Bitte nutze die PIN oder öffne die App im regulären Tab.',
+      };
+    }
+
     const rawIdBase64 = localStorage.getItem(STORAGE_KEY_PASSKEY_RAW_ID);
     if (!rawIdBase64) {
       return {
@@ -233,13 +299,28 @@ export async function authenticateWithPasskey(): Promise<{
 
     return { success: true };
   } catch (err: any) {
-    console.error('Passkey authentication error:', err);
+    const msg = String(err?.message || '');
+    const isFrameError =
+      msg.includes('publickey-credentials-get') ||
+      msg.includes('Permissions Policy') ||
+      msg.includes('feature is not enabled');
+
+    if (isFrameError) {
+      console.warn('WebAuthn authentication not permitted in this frame:', msg);
+      return {
+        success: false,
+        error:
+          'Passkey-Zugriff im Vorschaufenster blockiert. Bitte nutze deine Lehrkraft-PIN oder öffne die App im Vollbild / als PWA.',
+      };
+    }
+
     if (err.name === 'NotAllowedError') {
       return {
         success: false,
         error: 'Biometrische Prüfung abgebrochen oder nicht erkannt.',
       };
     }
+
     if (err.name === 'SecurityError') {
       return {
         success: false,
@@ -247,6 +328,8 @@ export async function authenticateWithPasskey(): Promise<{
           'Passkey-Zugriff im aktuellen Fenster nicht zugelassen. Bitte öffne die App direkt oder nutze die PIN.',
       };
     }
+
+    console.warn('Passkey authentication failed:', err);
     return {
       success: false,
       error: err.message || 'Biometrische Prüfung fehlgeschlagen.',

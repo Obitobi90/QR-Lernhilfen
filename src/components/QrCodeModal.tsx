@@ -1,15 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Lernhilfe } from '../types';
-import { X, Download, Copy, Check, Printer, ExternalLink } from 'lucide-react';
+import { X, Download, Copy, Check, Printer, ExternalLink, FileSpreadsheet } from 'lucide-react';
 
 interface QrCodeModalProps {
   item: Lernhilfe;
+  allWorksheetItems?: Lernhilfe[];
+  onOpenWorksheetQr?: (groupName: string, items: Lernhilfe[]) => void;
   onClose: () => void;
   onOpenPreview: (id: string) => void;
 }
 
-export const QrCodeModal: React.FC<QrCodeModalProps> = ({ item, onClose, onOpenPreview }) => {
+export const QrCodeModal: React.FC<QrCodeModalProps> = ({
+  item,
+  allWorksheetItems,
+  onOpenWorksheetQr,
+  onClose,
+  onOpenPreview,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
@@ -87,11 +95,15 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({ item, onClose, onOpenP
     ctx.fillText(line, width / 2, y);
 
     // Subject subtitle
-    if (item.subject) {
+    if (item.subject || item.group_name) {
       y += 24;
       ctx.fillStyle = '#64748b';
       ctx.font = '16px "Plus Jakarta Sans", sans-serif';
-      ctx.fillText(`Fach: ${item.subject} · ${item.hints.length} gestufte Tipps`, width / 2, y);
+      const parts = [];
+      if (item.group_name) parts.push(`Arbeitsblatt: ${item.group_name}`);
+      if (item.subject) parts.push(`Fach: ${item.subject}`);
+      parts.push(`${item.hints.length} gestufte Tipps`);
+      ctx.fillText(parts.join(' · '), width / 2, y);
     }
 
     // Draw QR code centered
@@ -154,24 +166,62 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({ item, onClose, onOpenP
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col">
         {/* Modal Header */}
         <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-              QR-Code für Schüler
-            </span>
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                QR-Code für Schüler
+              </span>
+              {item.group_name && (
+                <span className="text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800 flex items-center gap-1">
+                  <FileSpreadsheet className="w-3 h-3 text-purple-500" />
+                  <span className="truncate max-w-[180px]">{item.group_name}</span>
+                </span>
+              )}
+            </div>
             <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base line-clamp-1">
               {item.title}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Content */}
-        <div className="p-6 flex flex-col items-center text-center space-y-4">
+        <div className="p-5 sm:p-6 flex flex-col items-center text-center space-y-4">
+          {/* Worksheet Multi-QR Quick Banner */}
+          {item.group_name && allWorksheetItems && allWorksheetItems.length > 1 && (
+            <div className="w-full p-2.5 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 rounded-xl flex items-center justify-between gap-2 text-left">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileSpreadsheet className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-[10px] text-purple-700 dark:text-purple-300 font-bold block uppercase tracking-wider">
+                    Arbeitsblatt · {allWorksheetItems.length} Aufgaben
+                  </span>
+                  <span className="text-xs text-slate-700 dark:text-slate-300 font-medium truncate block">
+                    {item.group_name}
+                  </span>
+                </div>
+              </div>
+              {onOpenWorksheetQr && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenWorksheetQr(item.group_name!, allWorksheetItems);
+                  }}
+                  className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] rounded-lg shrink-0 flex items-center gap-1 shadow-2xs transition-colors"
+                >
+                  <Printer className="w-3 h-3" />
+                  <span>QR-Bogen</span>
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-xs flex items-center justify-center">
             <canvas ref={canvasRef} className="max-w-full h-auto" />
           </div>
