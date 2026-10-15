@@ -34,20 +34,20 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ content, className
           return (
             <div
               key={`block-${index}`}
-              className="my-3 overflow-x-auto text-center"
+              className="my-3 overflow-x-auto text-center whitespace-nowrap max-w-full py-0.5"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           );
         } catch (e) {
           return (
-            <pre key={`err-block-${index}`} className="my-2 p-2 bg-red-50 text-red-600 rounded text-sm font-mono">
+            <pre key={`err-block-${index}`} className="my-2 p-2 bg-red-50 text-red-600 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
               {math}
             </pre>
           );
         }
       }
 
-      // Inline math: starts and ends with $
+      // Inline math: starts and ends with $ (must never split across lines)
       if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
         const math = part.slice(1, -1).trim();
         try {
@@ -58,13 +58,18 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ content, className
           return (
             <span
               key={`inline-${index}`}
-              className="inline-math mx-0.5"
+              className="inline-math mx-0.5 whitespace-nowrap inline-block align-middle max-w-full overflow-x-auto"
+              style={{ whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'middle' }}
               dangerouslySetInnerHTML={{ __html: html }}
             />
           );
         } catch (e) {
           return (
-            <code key={`err-inline-${index}`} className="text-red-500 font-mono text-xs">
+            <code
+              key={`err-inline-${index}`}
+              className="text-red-500 font-mono text-xs whitespace-nowrap inline-block"
+              style={{ whiteSpace: 'nowrap' }}
+            >
               {math}
             </code>
           );

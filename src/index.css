@@ -17,12 +17,47 @@
   }
 }
 
-/* Custom Math & KaTeX tweaks */
+/* Custom Math & KaTeX tweaks: Math formulas must NEVER split across lines */
+.katex,
+.katex-html,
+.katex .base,
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .minner,
+.inline-math {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  hyphens: none !important;
+}
+
+.inline-math {
+  display: inline-block !important;
+  vertical-align: middle !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  line-height: normal !important;
+}
+
 .katex-display {
   margin: 0.75rem 0 !important;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0.25rem 0;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 0.25rem 0 !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.katex-display > .katex {
+  display: inline-block !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+  word-break: keep-all !important;
 }
 
 /* Dark mode adjustments for KaTeX */

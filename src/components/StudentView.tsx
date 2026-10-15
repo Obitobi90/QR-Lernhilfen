@@ -24,6 +24,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   FileSpreadsheet,
+  MessageSquarePlus,
+  Check,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -31,6 +33,8 @@ import {
   recordHintView,
   voteHint,
   getLocalVote,
+  fetchPupilSuggestion,
+  submitPupilSuggestion,
 } from '../utils/statsService';
 
 interface StudentViewProps {
@@ -63,6 +67,16 @@ export const StudentView: React.FC<StudentViewProps> = ({
   // User votes per hint (Thumbs up / Thumbs down)
   const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
 
+  // Pupil suggestions for additional/better hints
+  const [showSuggestionForm, setShowSuggestionForm] = useState<boolean>(false);
+  const [suggestionText, setSuggestionText] = useState<string>('');
+  const [suggestionSaved, setSuggestionSaved] = useState<boolean>(false);
+  const [suggestionLoading, setSuggestionLoading] = useState<boolean>(false);
+  const [existingSuggestion, setExistingSuggestion] = useState<{
+    id: string;
+    text: string;
+  } | null>(null);
+
   // Reset states and record views if item changes
   useEffect(() => {
     setUnlockedCount(1);
@@ -78,6 +92,17 @@ export const StudentView: React.FC<StudentViewProps> = ({
       if (v) initialVotes[h.id] = v;
     });
     setUserVotes(initialVotes);
+
+    // Load existing suggestion for this pupil if any
+    fetchPupilSuggestion(item.id).then((sug) => {
+      if (sug) {
+        setExistingSuggestion(sug);
+        setSuggestionText(sug.text);
+      } else {
+        setExistingSuggestion(null);
+        setSuggestionText('');
+      }
+    });
 
     // Record general task open view and hint 1 view (if real student access)
     if (!isTeacherPreview) {
@@ -129,10 +154,44 @@ export const StudentView: React.FC<StudentViewProps> = ({
     }
   };
 
-  // Student voting handler (Thumbs up / down)
+  // Student voting handler (Thumbs up / down with toggle-off support)
   const handleVote = async (hintId: string, rating: 'up' | 'down') => {
-    setUserVotes((prev) => ({ ...prev, [hintId]: rating }));
-    await voteHint(item.id, hintId, rating);
+    const currentVote = userVotes[hintId];
+
+    if (currentVote === rating) {
+      // Toggle off locally
+      setUserVotes((prev) => {
+        const copy = { ...prev };
+        delete copy[hintId];
+        return copy;
+      });
+    } else {
+      setUserVotes((prev) => ({ ...prev, [hintId]: rating }));
+    }
+
+    const res = await voteHint(item.id, hintId, rating);
+    if (res?.removed) {
+      setUserVotes((prev) => {
+        const copy = { ...prev };
+        delete copy[hintId];
+        return copy;
+      });
+    }
+  };
+
+  const handleSuggestionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestionText.trim()) return;
+
+    setSuggestionLoading(true);
+    const res = await submitPupilSuggestion(item.id, suggestionText.trim());
+    setSuggestionLoading(false);
+
+    if (res.success) {
+      setSuggestionSaved(true);
+      setExistingSuggestion(res.suggestion || { id: 'temp', text: suggestionText.trim() });
+      setTimeout(() => setSuggestionSaved(false), 3500);
+    }
   };
 
   const handlePinSubmit = (hintId: string, expectedPin: string) => {
@@ -501,14 +560,88 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
           {/* All Hints Revealed Note */}
           {unlockedCount >= item.hints.length && item.hints.length > 0 && (
-            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-center space-y-1">
-              <div className="flex items-center justify-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold text-sm">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Alle Denkanstöße wurden aufgedeckt</span>
+            <div className="space-y-3">
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-center space-y-1">
+                <div className="flex items-center justify-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-bold text-sm">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Alle Denkanstöße wurden aufgedeckt</span>
+                </div>
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                  Nutze diese Hilfen, um deine eigene Lösung aufzuschreiben und zu begründen.
+                </p>
               </div>
-              <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                Nutze diese Hilfen, um deine eigene Lösung aufzuschreiben und zu begründen.
-              </p>
+
+              {/* Optional Pupil Suggestion for better/additional hints */}
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <MessageSquarePlus className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-snug">
+                        Fehlt dir noch ein Denkanstoß?
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Welcher zusätzliche oder bessere Tipp hätte dir geholfen, ohne sofort die Lösung zu verraten? (optional)
+                      </p>
+                    </div>
+                  </div>
+
+                  {!showSuggestionForm && !existingSuggestion && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSuggestionForm(true)}
+                      className="self-start sm:self-auto px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-semibold shrink-0 transition-colors shadow-2xs"
+                    >
+                      Tipp vorschlagen
+                    </button>
+                  )}
+                </div>
+
+                {(showSuggestionForm || existingSuggestion) && (
+                  <form onSubmit={handleSuggestionSubmit} className="space-y-2.5 pt-1">
+                    <textarea
+                      rows={3}
+                      value={suggestionText}
+                      onChange={(e) => setSuggestionText(e.target.value)}
+                      placeholder="z. B. 'Ein Tipp zur Umrechnung der Einheiten vor Anwendung der Formel wäre hilfreich gewesen...'"
+                      className="w-full px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-200 leading-relaxed resize-none"
+                    />
+
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-400">
+                        {existingSuggestion
+                          ? 'Du kannst deinen Vorschlag jederzeit hier bearbeiten.'
+                          : 'Dein Vorschlag wird anonym an deine Lehrkraft übermittelt.'}
+                      </span>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        {suggestionSaved && (
+                          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Gespeichert!</span>
+                          </span>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={suggestionLoading || !suggestionText.trim()}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+                        >
+                          <MessageSquarePlus className="w-3.5 h-3.5" />
+                          <span>
+                            {suggestionLoading
+                              ? 'Wird gesendet...'
+                              : existingSuggestion
+                              ? 'Vorschlag aktualisieren'
+                              : 'Vorschlag abschicken'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
+              </div>
             </div>
           )}
         </div>

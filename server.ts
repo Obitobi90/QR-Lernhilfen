@@ -205,10 +205,21 @@ interface StoredHintStat {
   unhelpfulCount: number;
 }
 
+interface PupilSuggestion {
+  id: string;
+  lernhilfeId: string;
+  text: string;
+  ip: string;
+  voterId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface StoredLernhilfeStats {
   lernhilfeId: string;
   totalViews: number;
   hintStats: Record<string, StoredHintStat>;
+  suggestions?: PupilSuggestion[];
   lastViewedAt?: string;
   updatedAt: string;
 }
@@ -341,11 +352,20 @@ app.post('/api/stats/:lernhilfeId/vote', (req, res) => {
 
   if (existingVote) {
     if (existingVote.rating === rating) {
-      // User has already cast this exact vote
+      // User clicked the same vote button again -> remove the vote (toggle off)
+      if (existingVote.rating === 'up') {
+        hintStat.helpfulCount = Math.max(0, hintStat.helpfulCount - 1);
+      } else {
+        hintStat.unhelpfulCount = Math.max(0, hintStat.unhelpfulCount - 1);
+      }
+      delete votesDb[voterKey];
+      stat.updatedAt = new Date().toISOString();
+      saveStatsToDisk();
+
       return res.json({
         success: true,
-        alreadyVoted: true,
-        currentRating: rating,
+        removed: true,
+        currentRating: null,
         stats: stat,
       });
     } else {
@@ -392,6 +412,7 @@ app.post('/api/stats/:lernhilfeId/reset', (req, res) => {
     lernhilfeId,
     totalViews: 0,
     hintStats: {},
+    suggestions: [],
     updatedAt: new Date().toISOString(),
   };
 
@@ -404,6 +425,92 @@ app.post('/api/stats/:lernhilfeId/reset', (req, res) => {
 
   saveStatsToDisk();
   return res.json({ success: true, stats: statsDb[lernhilfeId] });
+});
+
+// 5. Get current pupil's suggestion for a Lernhilfe
+app.get('/api/stats/:lernhilfeId/suggestion', (req, res) => {
+  const { lernhilfeId } = req.params;
+  const voterId = req.query.voterId as string;
+  const clientIp = getClientIp(req);
+
+  const stat = statsDb[lernhilfeId];
+  if (!stat || !Array.isArray(stat.suggestions)) {
+    return res.json({ suggestion: null });
+  }
+
+  const found = stat.suggestions.find(
+    (s) => (voterId && s.voterId === voterId) || s.ip === clientIp
+  );
+
+  return res.json({ suggestion: found || null });
+});
+
+// 6. Submit or edit pupil's suggestion for additional/better hints
+app.post('/api/stats/:lernhilfeId/suggestion', (req, res) => {
+  const { lernhilfeId } = req.params;
+  const { text, voterId } = req.body;
+
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({ error: 'Text ist erforderlich' });
+  }
+
+  const clientIp = getClientIp(req);
+
+  if (!statsDb[lernhilfeId]) {
+    statsDb[lernhilfeId] = {
+      lernhilfeId,
+      totalViews: 1,
+      hintStats: {},
+      suggestions: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const stat = statsDb[lernhilfeId];
+  if (!Array.isArray(stat.suggestions)) {
+    stat.suggestions = [];
+  }
+
+  // Check if this pupil already submitted a suggestion (by voterId or IP)
+  const existingIdx = stat.suggestions.findIndex(
+    (s) => (voterId && s.voterId === voterId) || s.ip === clientIp
+  );
+
+  const cleanText = text.trim().slice(0, 1000);
+
+  if (existingIdx >= 0) {
+    // Edit existing suggestion
+    stat.suggestions[existingIdx] = {
+      ...stat.suggestions[existingIdx],
+      text: cleanText,
+      voterId: voterId || stat.suggestions[existingIdx].voterId,
+      updatedAt: new Date().toISOString(),
+    };
+    saveStatsToDisk();
+    return res.json({
+      success: true,
+      isEdit: true,
+      suggestion: stat.suggestions[existingIdx],
+    });
+  } else {
+    // Create new suggestion
+    const newSug: PupilSuggestion = {
+      id: 'sug-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      lernhilfeId,
+      text: cleanText,
+      ip: clientIp,
+      voterId: voterId || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    stat.suggestions.unshift(newSug);
+    saveStatsToDisk();
+    return res.json({
+      success: true,
+      isEdit: false,
+      suggestion: newSug,
+    });
+  }
 });
 
 // ==========================================

@@ -227,16 +227,21 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
               Digitale Tippkarten
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
-              Scanne den QR-Code auf deinem Arbeitsblatt mit der Smartphone-Kamera oder gib den Lernhilfe-Code deiner Lehrkraft ein.
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+              Scanne den QR-Code auf deinem Arbeitsblatt mit der Smartphone-Kamera oder gib den Lernhilfe-Code (steht auf dem Arbeitsblatt unter dem QR-Code) ein.
             </p>
           </div>
 
           {/* Form for manual code entry */}
           <form onSubmit={handleCodeSubmit} className="space-y-3 pt-2 text-left">
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-              Aufgaben-Code oder Stichwort eingeben:
-            </label>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                Lernhilfe-Code oder Aufgabennamen eingeben:
+              </label>
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">
+                Der Code steht auf dem Arbeitsblatt direkt unter dem QR-Code (z. B. <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{items[0]?.id || 'leiter-aufgabe'}</span>)
+              </span>
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -248,7 +253,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     if (codeError) setCodeError(null);
                     if (multipleMatches.length > 0) setMultipleMatches([]);
                   }}
-                  placeholder="z. B. leiter, pythagoras, fall..."
+                  placeholder="Lernhilfe-Code oder Stichwort (z. B. leiter, pythagoras)..."
                   className="w-full pl-9 pr-3.5 py-3 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
                 />
               </div>

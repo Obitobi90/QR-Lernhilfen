@@ -321,16 +321,16 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl overflow-hidden max-w-4xl mx-auto my-6">
       {/* Editor Header Bar */}
-      <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+      <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
             {initialItem ? 'Lernhilfe bearbeiten' : 'Neue Lernhilfe erstellen'}
           </span>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+          <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
             Didaktischer Tippkarten-Editor
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
           {/* Mode Switch: Editor vs Live Preview */}
           <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
             <button
@@ -359,6 +359,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
           <button
             type="button"
             onClick={onCancel}
+            title="Schließen"
             className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <X className="w-5 h-5" />
@@ -616,11 +617,27 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             )}
 
             <textarea
-              rows={3}
+              rows={Math.max(3, (taskContext || '').split('\n').length + Math.ceil((taskContext || '').length / 60))}
               value={taskContext}
-              onChange={(e) => setTaskContext(e.target.value)}
+              onChange={(e) => {
+                setTaskContext(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.max(88, e.target.scrollHeight)}px`;
+              }}
+              onInput={(e) => {
+                const target = e.currentTarget;
+                target.style.height = 'auto';
+                target.style.height = `${Math.max(88, target.scrollHeight)}px`;
+              }}
+              ref={(el) => {
+                if (el) {
+                  el.style.height = 'auto';
+                  el.style.height = `${Math.max(88, el.scrollHeight)}px`;
+                }
+              }}
               placeholder="Hier den Aufgabentext eintragen (vollständig optional! Mathe-Formeln in $formel$ unterstützt, oder oben mit KI aus dem Foto extrahieren)..."
-              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed"
+              className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed overflow-hidden transition-[height] duration-75"
+              style={{ minHeight: '88px', overflowY: 'hidden' }}
             />
 
             {/* Live KaTeX Math Formula Preview */}
@@ -815,7 +832,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
           {/* Stepped Hints Section */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div>
                 <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <span>Gestufte Tipps ({hints.length})</span>
@@ -827,7 +844,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               <button
                 type="button"
                 onClick={handleAddHint}
-                className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors"
+                className="self-start sm:self-auto px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-semibold rounded-lg border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Tipp hinzufügen</span>
@@ -930,11 +947,27 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     </div>
 
                     <textarea
-                      rows={3}
+                      rows={Math.max(3, (hint.text || '').split('\n').length + Math.ceil((hint.text || '').length / 60))}
                       value={hint.text}
-                      onChange={(e) => handleUpdateHint(index, { text: e.target.value })}
+                      onChange={(e) => {
+                        handleUpdateHint(index, { text: e.target.value });
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${Math.max(88, e.target.scrollHeight)}px`;
+                      }}
+                      onInput={(e) => {
+                        const target = e.currentTarget;
+                        target.style.height = 'auto';
+                        target.style.height = `${Math.max(88, target.scrollHeight)}px`;
+                      }}
+                      ref={(el) => {
+                        if (el) {
+                          el.style.height = 'auto';
+                          el.style.height = `${Math.max(88, el.scrollHeight)}px`;
+                        }
+                      }}
                       placeholder="Erklärung, Denkanstoß oder Leitfrage eingeben..."
-                      className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed"
+                      className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed overflow-hidden transition-[height] duration-75"
+                      style={{ minHeight: '88px', overflowY: 'hidden' }}
                     />
 
                     {/* Realtime KaTeX text preview if text exists */}

@@ -21,6 +21,7 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedImage, setCopiedImage] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Formulate student URL
   const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
@@ -113,20 +114,35 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
     const qrY = y + 25;
     ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
 
-    // Instructions footer
+    // Instructions footer with prominent Lernhilfe-Code
+    ctx.fillStyle = '#1e293b';
+    ctx.font = 'bold 16px "JetBrains Mono", monospace';
+    ctx.fillText(`Lernhilfe-Code: ${item.id}`, width / 2, qrY + qrSize + 32);
+
     ctx.fillStyle = '#475569';
-    ctx.font = '15px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText('Mit dem Smartphone oder Tablet scannen, um Tipps zu öffnen', width / 2, qrY + qrSize + 36);
+    ctx.font = '14px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('Mit Kamera scannen oder Code im Schülerportal eingeben', width / 2, qrY + qrSize + 56);
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px "JetBrains Mono", monospace';
-    ctx.fillText(studentUrl, width / 2, qrY + qrSize + 60);
+    ctx.fillText(studentUrl, width / 2, qrY + qrSize + 78);
 
     // Trigger download
     const link = document.createElement('a');
     link.download = `Tippkarte_${item.title.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
     link.href = printCanvas.toDataURL('image/png');
     link.click();
+  };
+
+  // Copy Lernhilfe Code
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(item.id);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2500);
+    } catch (err) {
+      console.error('Clipboard copy code failed:', err);
+    }
   };
 
   // Copy QR Image to Clipboard
@@ -226,11 +242,44 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
             <canvas ref={canvasRef} className="max-w-full h-auto" />
           </div>
 
+          {/* Prominent Lernhilfe-Code Display & Copy Box */}
+          <div className="w-full p-3 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl flex items-center justify-between gap-3 text-left">
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider block">
+                Lernhilfe-Code zum Eintippen:
+              </span>
+              <span className="font-mono font-bold text-sm sm:text-base text-indigo-950 dark:text-indigo-100 select-all block truncate">
+                {item.id}
+              </span>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                Schüler ohne Kamera können diesen Code direkt im Schülerportal eingeben.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyCode}
+              title="Lernhilfe-Code kopieren"
+              className="px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-slate-800 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-semibold shrink-0 flex items-center gap-1 transition-colors shadow-2xs"
+            >
+              {copiedCode ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="text-emerald-600">Kopiert!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Code kopieren</span>
+                </>
+              )}
+            </button>
+          </div>
+
           <div className="space-y-1 max-w-sm">
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Diesen Code auf das Arbeitsblatt drucken oder per Beamer an die Wand projizieren.
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Diesen QR-Code auf das Arbeitsblatt drucken oder per Beamer an die Wand projizieren.
             </p>
-            <p className="text-xs text-slate-400 dark:text-slate-500 font-mono break-all line-clamp-2">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 font-mono break-all line-clamp-1">
               {studentUrl}
             </p>
           </div>

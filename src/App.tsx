@@ -231,6 +231,45 @@ export default function App() {
     }
   };
 
+  const handleUngroupWorksheet = async (groupName: string) => {
+    const itemsInGroup = items.filter((i) => i.group_name === groupName);
+    if (itemsInGroup.length === 0) return;
+
+    // Optimistically update list
+    setItems((prev) =>
+      prev.map((item) =>
+        item.group_name === groupName ? { ...item, group_name: undefined } : item
+      )
+    );
+    showToast(`Arbeitsblatt-Zuordnung für ${itemsInGroup.length} Karten aufgehoben.`, 'info');
+
+    for (const it of itemsInGroup) {
+      try {
+        await saveLernhilfe({ ...it, group_name: undefined });
+      } catch (e) {
+        console.error('Failed to ungroup item:', it.id, e);
+      }
+    }
+  };
+
+  const handleDeleteWorksheet = async (groupName: string) => {
+    const itemsInGroup = items.filter((i) => i.group_name === groupName);
+    if (itemsInGroup.length === 0) return;
+
+    // Optimistically remove all items in this worksheet
+    const ids = new Set(itemsInGroup.map((i) => i.id));
+    setItems((prev) => prev.filter((i) => !ids.has(i.id)));
+    showToast(`Arbeitsblatt „${groupName}“ mit ${itemsInGroup.length} Aufgaben gelöscht.`, 'info');
+
+    for (const it of itemsInGroup) {
+      try {
+        await deleteLernhilfe(it.id);
+      } catch (e) {
+        console.error('Failed to delete item from worksheet:', it.id, e);
+      }
+    }
+  };
+
   // 1. If student mode is active (?id=...)
   if (studentId) {
     if (loading && !studentItem) {
@@ -430,6 +469,8 @@ export default function App() {
             onOpenStats={(item) => setStatsModalItem(item)}
             onOpenPreview={handleOpenStudentView}
             onOpenSettings={() => setIsSettingsOpen(true)}
+            onUngroupWorksheet={handleUngroupWorksheet}
+            onDeleteWorksheet={handleDeleteWorksheet}
             isSupabaseEnabled={isSupabaseEnabled}
           />
         )}

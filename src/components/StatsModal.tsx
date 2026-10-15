@@ -16,6 +16,8 @@ import {
   RotateCcw,
   CheckCircle2,
   Lock,
+  MessageSquarePlus,
+  Clock,
 } from 'lucide-react';
 
 interface StatsModalProps {
@@ -27,6 +29,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
   const [stats, setStats] = useState<LernhilfeStats | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [resetting, setResetting] = useState<boolean>(false);
+  const [confirmReset, setConfirmReset] = useState<boolean>(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
 
   const loadStats = async () => {
@@ -40,17 +43,13 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
     loadStats();
   }, [item.id]);
 
-  const handleReset = async () => {
-    const confirmed = window.confirm(
-      `Möchtest du alle Aufruf- und Feedback-Statistiken für "${item.title}" wirklich auf 0 zurücksetzen? (z.B. für eine neue Klasse oder ein neues Schuljahr)`
-    );
-    if (!confirmed) return;
-
+  const executeReset = async () => {
+    setConfirmReset(false);
     setResetting(true);
     await resetLernhilfeStats(item.id);
     await loadStats();
     setResetting(false);
-    setFeedbackMessage('Statistiken erfolgreich zurückgesetzt.');
+    setFeedbackMessage('Statistiken & Vorschläge erfolgreich zurückgesetzt.');
     setTimeout(() => setFeedbackMessage(null), 3000);
   };
 
@@ -292,6 +291,60 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
             </div>
           </div>
 
+          {/* Pupil Suggestions Section */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <MessageSquarePlus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Schüler-Vorschläge für zusätzliche &amp; bessere Tipps</span>
+              </h4>
+              <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-md">
+                {stats?.suggestions?.length || 0} {stats?.suggestions?.length === 1 ? 'Vorschlag' : 'Vorschläge'}
+              </span>
+            </div>
+
+            {stats?.suggestions && stats.suggestions.length > 0 ? (
+              <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                {stats.suggestions.map((sug, idx) => (
+                  <div
+                    key={sug.id || idx}
+                    className="p-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 shadow-2xs"
+                  >
+                    <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
+                      „{sug.text}“
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 pt-0.5">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>
+                          {new Date(sug.updatedAt || sug.createdAt).toLocaleDateString('de-DE', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </span>
+                      {sug.updatedAt !== sug.createdAt && (
+                        <span className="italic text-slate-400">vom Schüler bearbeitet</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-center space-y-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Noch keine Text-Vorschläge für diese Aufgabe eingereicht.
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Schüler können am Ende aller aufgedeckten Tipps optionale Denkanstöße formulieren.
+                </p>
+              </div>
+            )}
+          </div>
+
           {/* Didactic Scaffolding Diagnostic Box */}
           <div className="p-4 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl space-y-2">
             <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 dark:text-indigo-200">
@@ -306,28 +359,51 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
                 <strong>Tipp-Überarbeitung:</strong> Wenn ein Tipp viele Daumen nach unten erhält, ist die Formulierung möglicherweise missverständlich oder der Zwischenschritt zu groß.
               </li>
               <li>
-                <strong>Spamschutz:</strong> Jeder Schüler kann pro Tipp maximal eine Stimme abgeben (anonyme IP- &amp; Geräteprüfung).
+                <strong>Schüler-Vorschläge:</strong> Aus den Anregungen der Schüler lässt sich erkennen, welche Vorkenntnisse oder Teilschritte im Unterricht noch fehlen.
               </li>
             </ul>
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <button
-            type="button"
-            disabled={resetting}
-            onClick={handleReset}
-            className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg border border-rose-200 dark:border-rose-900/60 font-semibold flex items-center gap-1.5 transition"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Statistiken zurücksetzen</span>
-          </button>
+        {/* Footer Actions with Safe Inline Confirmation */}
+        <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+          {confirmReset ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-rose-700 dark:text-rose-400">
+                Wirklich alle Statistiken &amp; Vorschläge auf 0 setzen?
+              </span>
+              <button
+                type="button"
+                disabled={resetting}
+                onClick={executeReset}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition shadow-xs"
+              >
+                {resetting ? 'Setze zurück...' : 'Ja, zurücksetzen'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="px-3 py-1.5 text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-xs font-semibold transition"
+              >
+                Abbrechen
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={resetting}
+              onClick={() => setConfirmReset(true)}
+              className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-lg border border-rose-200 dark:border-rose-900/60 font-semibold flex items-center gap-1.5 transition"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Statistiken zurücksetzen</span>
+            </button>
+          )}
 
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition"
+            className="px-5 py-2 text-xs font-bold text-white bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 rounded-xl transition ml-auto"
           >
             Schließen
           </button>

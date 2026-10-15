@@ -120,18 +120,37 @@ export async function recordHintView(lernhilfeId: string, hintId: string): Promi
 }
 
 /**
+ * Removes a local vote from storage.
+ */
+function removeLocalVote(lernhilfeId: string, hintId: string) {
+  try {
+    const raw = localStorage.getItem(STORAGE_MY_VOTES);
+    if (!raw) return;
+    const votes: Record<string, FeedbackRating> = JSON.parse(raw);
+    delete votes[`${lernhilfeId}:::${hintId}`];
+    localStorage.setItem(STORAGE_MY_VOTES, JSON.stringify(votes));
+  } catch (e) {}
+}
+
+/**
  * Submits helpfulness feedback (👍 / 👎) for a specific hint.
- * The server tracks IP and voterId so a student can only vote once per hint.
+ * If the user clicks the same rating again, the vote is removed (toggle off).
+ * The server tracks IP and voterId.
  */
 export async function voteHint(
   lernhilfeId: string,
   hintId: string,
   rating: FeedbackRating
-): Promise<{ success: boolean; currentRating: FeedbackRating; alreadyVoted?: boolean }> {
+): Promise<{ success: boolean; currentRating: FeedbackRating | null; removed?: boolean }> {
   const voterId = getVoterId();
+  const previousVote = getLocalVote(lernhilfeId, hintId);
 
-  // Optimistically store in local state
-  setLocalVote(lernhilfeId, hintId, rating);
+  // If clicking same rating locally, optimistically remove
+  if (previousVote === rating) {
+    removeLocalVote(lernhilfeId, hintId);
+  } else {
+    setLocalVote(lernhilfeId, hintId, rating);
+  }
 
   try {
     const res = await fetch(`/api/stats/${encodeURIComponent(lernhilfeId)}/vote`, {
@@ -145,10 +164,13 @@ export async function voteHint(
       if (data?.stats) {
         saveLocalStats(lernhilfeId, data.stats);
       }
+      if (data?.removed || data?.currentRating === null) {
+        removeLocalVote(lernhilfeId, hintId);
+        return { success: true, currentRating: null, removed: true };
+      }
       return {
         success: true,
         currentRating: data?.currentRating || rating,
-        alreadyVoted: data?.alreadyVoted,
       };
     }
   } catch (err) {
@@ -167,14 +189,72 @@ export async function voteHint(
   }
 
   const h = stat.hintStats[hintId];
-  if (rating === 'up') {
-    h.helpfulCount += 1;
+  if (previousVote === rating) {
+    // Local toggle off
+    if (rating === 'up') {
+      h.helpfulCount = Math.max(0, h.helpfulCount - 1);
+    } else {
+      h.unhelpfulCount = Math.max(0, h.unhelpfulCount - 1);
+    }
+    saveLocalStats(lernhilfeId, stat);
+    removeLocalVote(lernhilfeId, hintId);
+    return { success: true, currentRating: null, removed: true };
   } else {
-    h.unhelpfulCount += 1;
-  }
-  saveLocalStats(lernhilfeId, stat);
+    if (previousVote === 'up') h.helpfulCount = Math.max(0, h.helpfulCount - 1);
+    if (previousVote === 'down') h.unhelpfulCount = Math.max(0, h.unhelpfulCount - 1);
 
-  return { success: true, currentRating: rating };
+    if (rating === 'up') h.helpfulCount += 1;
+    if (rating === 'down') h.unhelpfulCount += 1;
+
+    saveLocalStats(lernhilfeId, stat);
+    return { success: true, currentRating: rating };
+  }
+}
+
+/**
+ * Fetches the pupil's own suggestion for this task if previously submitted.
+ */
+export async function fetchPupilSuggestion(
+  lernhilfeId: string
+): Promise<{ id: string; text: string; createdAt: string; updatedAt: string } | null> {
+  const voterId = getVoterId();
+  try {
+    const res = await fetch(
+      `/api/stats/${encodeURIComponent(lernhilfeId)}/suggestion?voterId=${encodeURIComponent(voterId)}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      return data?.suggestion || null;
+    }
+  } catch (e) {
+    console.warn('Could not fetch pupil suggestion:', e);
+  }
+  return null;
+}
+
+/**
+ * Submits or edits a pupil suggestion for additional / better hints.
+ */
+export async function submitPupilSuggestion(
+  lernhilfeId: string,
+  text: string
+): Promise<{ success: boolean; isEdit?: boolean; suggestion?: any; error?: string }> {
+  const voterId = getVoterId();
+  try {
+    const res = await fetch(`/api/stats/${encodeURIComponent(lernhilfeId)}/suggestion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voterId }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: true, isEdit: data?.isEdit, suggestion: data?.suggestion };
+    }
+    const errData = await res.json().catch(() => ({}));
+    return { success: false, error: errData?.error || 'Fehler beim Senden des Feedbacks.' };
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Netzwerkfehler.' };
+  }
 }
 
 /**

@@ -31,10 +31,19 @@ export interface HintStat {
   unhelpfulCount: number;
 }
 
+export interface PupilSuggestion {
+  id: string;
+  lernhilfeId: string;
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LernhilfeStats {
   lernhilfeId: string;
   totalViews: number;
   hintStats: Record<string, HintStat>;
+  suggestions?: PupilSuggestion[];
   lastViewedAt?: string;
   updatedAt: string;
 }

@@ -23,6 +23,9 @@ import {
   FolderOpen,
   AlertTriangle,
   Loader2,
+  Check,
+  Edit2,
+  Unlink,
 } from 'lucide-react';
 
 interface TeacherViewProps {
@@ -33,6 +36,9 @@ interface TeacherViewProps {
   onDelete: (id: string) => void;
   onOpenQr: (item: Lernhilfe) => void;
   onOpenWorksheetQr?: (groupName: string, items: Lernhilfe[]) => void;
+  onUngroupWorksheet?: (groupName: string) => void;
+  onRenameWorksheet?: (oldName: string, newName: string) => void;
+  onDeleteWorksheet?: (groupName: string, items: Lernhilfe[]) => void;
   onOpenStats: (item: Lernhilfe) => void;
   onOpenPreview: (id: string) => void;
   onOpenSettings: () => void;
@@ -47,6 +53,9 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   onDelete,
   onOpenQr,
   onOpenWorksheetQr,
+  onUngroupWorksheet,
+  onRenameWorksheet,
+  onDeleteWorksheet,
   onOpenStats,
   onOpenPreview,
   onOpenSettings,
@@ -54,13 +63,22 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('Alle');
+  const [selectedGrade, setSelectedGrade] = useState<string>('Alle');
   const [selectedGroup, setSelectedGroup] = useState<string>('Alle');
   const [viewMode, setViewMode] = useState<'grouped' | 'list'>('grouped');
+
+  // Copied Code Feedback state
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
   // Local state for delete confirmation dialog (avoids window.confirm blocked in iframes)
   const [itemToDelete, setItemToDelete] = useState<Lernhilfe | null>(null);
   // Track duplicating item id for visual feedback
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+
+  // Worksheet group management dialogs
+  const [groupToRename, setGroupToRename] = useState<{ oldName: string; newName: string } | null>(null);
+  const [groupToUngroup, setGroupToUngroup] = useState<string | null>(null);
+  const [groupToDelete, setGroupToDelete] = useState<{ name: string; items: Lernhilfe[] } | null>(null);
 
   const handleDuplicate = async (item: Lernhilfe) => {
     try {
@@ -98,6 +116,29 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
     return Array.from(set);
   }, [items]);
 
+  // Distinct grades across items with preset standard grades
+  const existingGrades = useMemo(() => {
+    const defaultGrades = [
+      'Alle',
+      'Klasse 5',
+      'Klasse 6',
+      'Klasse 7',
+      'Klasse 8',
+      'Klasse 9',
+      'Klasse 10',
+      'EF',
+      'Q1',
+      'Q2',
+    ];
+    const set = new Set<string>(defaultGrades);
+    items.forEach((i) => {
+      if (i.grade_level && i.grade_level.trim().length > 0) {
+        set.add(i.grade_level.trim());
+      }
+    });
+    return Array.from(set);
+  }, [items]);
+
   // General item filter
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -107,9 +148,12 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
         item.task_context.toLowerCase().includes(q) ||
         (item.subject && item.subject.toLowerCase().includes(q)) ||
         (item.grade_level && item.grade_level.toLowerCase().includes(q)) ||
-        (item.group_name && item.group_name.toLowerCase().includes(q));
+        (item.group_name && item.group_name.toLowerCase().includes(q)) ||
+        item.id.toLowerCase().includes(q);
 
       const matchesSubject = selectedSubject === 'Alle' || item.subject === selectedSubject;
+
+      const matchesGrade = selectedGrade === 'Alle' || item.grade_level === selectedGrade;
 
       const matchesGroup =
         selectedGroup === 'Alle' ||
@@ -117,9 +161,9 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
           ? !item.group_name || item.group_name.trim() === ''
           : item.group_name === selectedGroup);
 
-      return matchesSearch && matchesSubject && matchesGroup;
+      return matchesSearch && matchesSubject && matchesGrade && matchesGroup;
     });
-  }, [items, searchTerm, selectedSubject, selectedGroup]);
+  }, [items, searchTerm, selectedSubject, selectedGrade, selectedGroup]);
 
   // Grouped breakdown
   const groupedData = useMemo(() => {
@@ -206,6 +250,40 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
           <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 leading-snug">
             {item.title}
           </h3>
+
+          {/* Prominent Lernhilfe-Code Badge with Copy button */}
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
+                Lernhilfe-Code:
+              </span>
+              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300 text-xs truncate select-all">
+                {item.id}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(item.id);
+                setCopiedCodeId(item.id);
+                setTimeout(() => setCopiedCodeId(null), 2000);
+              }}
+              title="Lernhilfe-Code kopieren"
+              className="px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-md border border-slate-200 dark:border-slate-700 flex items-center gap-1 shrink-0 transition-colors shadow-2xs"
+            >
+              {copiedCodeId === item.id ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  <span className="text-emerald-600 font-bold">Kopiert!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Kopieren</span>
+                </>
+              )}
+            </button>
+          </div>
 
           {/* Task context preview - completely displayed without line-clamp */}
           {item.task_context && (
@@ -370,8 +448,8 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
           </div>
         </div>
 
-        {/* Filter Bars (Subjects & Worksheets) */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        {/* Filter Bars (Subjects, Grades & Worksheets) */}
+        <div className="space-y-2">
           {/* Subject Filter Tabs */}
           <div className="flex items-center gap-1 overflow-x-auto p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
             {subjects.map((sub) => (
@@ -389,27 +467,69 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
             ))}
           </div>
 
-          {/* Worksheet Selection Filter if worksheets exist */}
-          {existingGroups.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-slate-400 text-[11px] shrink-0 hidden sm:inline">
-                Arbeitsblatt-Filter:
-              </span>
-              <select
-                value={selectedGroup}
-                onChange={(e) => setSelectedGroup(e.target.value)}
-                className="px-2.5 py-1 text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-purple-500"
-              >
-                <option value="Alle">Alle Arbeitsblätter &amp; Einzelkarten</option>
-                {existingGroups.map((grp) => (
-                  <option key={grp} value={grp}>
-                    📋 {grp}
-                  </option>
-                ))}
-                <option value="__ungrouped__">Nur Einzelkarten (ohne Arbeitsblatt)</option>
-              </select>
+          {/* Secondary Filter Row: Jahrgangsstufe & Arbeitsblatt */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-0.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Grade Level (Jahrgang) Filter */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-slate-500 dark:text-slate-400 text-xs font-medium shrink-0 flex items-center gap-1">
+                  <GraduationCap className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Jahrgang:</span>
+                </span>
+                <select
+                  value={selectedGrade}
+                  onChange={(e) => setSelectedGrade(e.target.value)}
+                  className="px-2.5 py-1 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {existingGrades.map((gr) => (
+                    <option key={gr} value={gr}>
+                      {gr === 'Alle' ? 'Alle Jahrgänge' : gr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Worksheet Selection Filter */}
+              {existingGroups.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-slate-500 dark:text-slate-400 text-xs font-medium shrink-0 flex items-center gap-1">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-purple-500" />
+                    <span>Arbeitsblatt:</span>
+                  </span>
+                  <select
+                    value={selectedGroup}
+                    onChange={(e) => setSelectedGroup(e.target.value)}
+                    className="px-2.5 py-1 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  >
+                    <option value="Alle">Alle Arbeitsblätter &amp; Einzelkarten</option>
+                    {existingGroups.map((grp) => (
+                      <option key={grp} value={grp}>
+                        📋 {grp}
+                      </option>
+                    ))}
+                    <option value="__ungrouped__">Nur Einzelkarten (ohne Arbeitsblatt)</option>
+                  </select>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Reset Filters button if any filter active */}
+            {(selectedSubject !== 'Alle' || selectedGrade !== 'Alle' || selectedGroup !== 'Alle' || searchTerm) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSubject('Alle');
+                  setSelectedGrade('Alle');
+                  setSelectedGroup('Alle');
+                  setSearchTerm('');
+                }}
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Filter zurücksetzen</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -491,6 +611,17 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span className="hidden md:inline">Teilaufgabe ergänzen</span>
+                    </button>
+
+                    {/* Manage / Delete / Dissolve Worksheet Group */}
+                    <button
+                      type="button"
+                      onClick={() => setGroupToDelete({ name, items: groupItems })}
+                      title={`Themen- / Arbeitsblatt-Gruppe „${name}“ verwalten oder löschen`}
+                      className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden md:inline">Gruppe auflösen / löschen</span>
                     </button>
                   </div>
                 </div>
@@ -587,6 +718,85 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Lernhilfe löschen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Worksheet Group Delete / Dissolve Modal */}
+      {groupToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                <FileSpreadsheet className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
+                  Arbeitsblatt „{groupToDelete.name}“ auflösen oder löschen?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  Dieses Arbeitsblatt umfasst <strong>{groupToDelete.items.length} {groupToDelete.items.length === 1 ? 'Lernhilfe' : 'Lernhilfen'}</strong>. Wähle die gewünschte Option:
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {/* Option 1: Ungroup (Keep tasks, remove worksheet assignment) */}
+              <button
+                type="button"
+                onClick={() => {
+                  const grpName = groupToDelete.name;
+                  setGroupToDelete(null);
+                  if (onUngroupWorksheet) {
+                    onUngroupWorksheet(grpName);
+                  }
+                }}
+                className="w-full p-3.5 bg-slate-50 dark:bg-slate-950/60 hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl flex items-start gap-3 text-left transition-colors group"
+              >
+                <FolderOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-slate-100 block group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                    Nur Zuordnung aufheben (Empfohlen)
+                  </span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 leading-relaxed">
+                    Alle {groupToDelete.items.length} Lernhilfen &amp; QR-Codes bleiben erhalten und werden zu eigenständigen Einzelkarten.
+                  </span>
+                </div>
+              </button>
+
+              {/* Option 2: Delete Entire Worksheet and all tasks */}
+              <button
+                type="button"
+                onClick={() => {
+                  const grpName = groupToDelete.name;
+                  setGroupToDelete(null);
+                  if (onDeleteWorksheet) {
+                    onDeleteWorksheet(grpName);
+                  }
+                }}
+                className="w-full p-3.5 bg-rose-50/60 dark:bg-rose-950/30 hover:bg-rose-100/80 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-xl flex items-start gap-3 text-left transition-colors group"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-rose-700 dark:text-rose-300 block group-hover:text-rose-800">
+                    Arbeitsblatt samt allen {groupToDelete.items.length} Aufgaben löschen
+                  </span>
+                  <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80 block mt-0.5 leading-relaxed">
+                    Löscht die Gruppierung und alle {groupToDelete.items.length} enthaltenen Lernhilfen unwiderruflich.
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setGroupToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Abbrechen
               </button>
             </div>
           </div>
