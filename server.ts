@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 
 dotenv.config();
+process.env.DISABLE_HMR = 'true';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;

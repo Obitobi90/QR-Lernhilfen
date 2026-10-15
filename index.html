@@ -30,6 +30,29 @@
 
     <script>
       (function() {
+        // Suppress WebSocket errors originating from Vite HMR in AI Studio preview
+        const origError = console.error;
+        console.error = function(...args) {
+          const isWsError = args.some(function(arg) {
+            if (typeof arg === 'string') return arg.includes('WebSocket') || arg.includes('[vite]');
+            if (arg && arg.message) return String(arg.message).includes('WebSocket') || String(arg.message).includes('[vite]');
+            if (arg && arg.stack) return String(arg.stack).includes('@vite/client');
+            return false;
+          });
+          if (isWsError) return;
+          origError.apply(console, args);
+        };
+
+        window.addEventListener('error', function(event) {
+          if (event && (
+            (event.message && String(event.message).includes('WebSocket')) ||
+            (event.filename && String(event.filename).includes('@vite/client'))
+          )) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+          }
+        }, true);
+
         try {
           const saved = localStorage.getItem('lernhilfen_dark_mode');
           const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
