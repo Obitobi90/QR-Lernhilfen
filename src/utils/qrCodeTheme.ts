@@ -36,7 +36,9 @@ export interface QrDesignSettings {
   sketchStrokeColor?: string; // Hex code or empty to match darkColor
   sketchIntensity?: number; // 1 to 5
   badgeShape: 'circle' | 'rounded';
+  logoFit?: 'contain' | 'cover'; // Aspect-ratio preservation mode
 }
+
 
 export const QR_BORDER_OPTIONS: {
   id: QrBorderDecoration;
@@ -143,10 +145,12 @@ export function getDefaultQrDesignSettings(): QrDesignSettings {
     borderDecoration: 'corner_accents',
     centerLogoType: 'none',
     badgeShape: 'rounded',
+    logoFit: 'contain',
     sketchStyle: 'pencil',
     sketchIntensity: 3,
   };
 }
+
 
 export function getQrDesignSettings(): QrDesignSettings {
   try {
@@ -702,15 +706,60 @@ export async function renderStyledQrCode(
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // Draw sketch image centered with small padding
-        const innerPad = centerSize * 0.08;
-        ctx.drawImage(
-          img,
-          centerX + innerPad,
-          centerY + innerPad,
-          centerSize - innerPad * 2,
-          centerSize - innerPad * 2
-        );
+        // Draw sketch image strictly preserving aspect ratio (NO DISTORTION / KEINE VERZERRUNG)
+        const fitMode = settings.logoFit || 'contain';
+        const imgW = img.naturalWidth || img.width || 1;
+        const imgH = img.naturalHeight || img.height || 1;
+        const aspect = imgW / imgH;
+
+        if (fitMode === 'cover') {
+          // Cover mode: Fills the entire badge proportionally with centered crop, strictly undistorted
+          const pad = centerSize * 0.02;
+          const destW = centerSize - pad * 2;
+          const destH = centerSize - pad * 2;
+          const destX = centerX + pad;
+          const destY = centerY + pad;
+
+          let srcX = 0;
+          let srcY = 0;
+          let srcW = imgW;
+          let srcH = imgH;
+
+          if (aspect > 1) {
+            // Source is wider than square: crop left and right equally
+            srcW = imgH;
+            srcX = (imgW - srcW) / 2;
+          } else {
+            // Source is taller than square: crop top and bottom equally
+            srcH = imgW;
+            srcY = (imgH - srcH) / 2;
+          }
+
+          ctx.drawImage(img, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+        } else {
+          // Contain mode (default): Scales the entire drawing proportionally to fit inside badge, strictly undistorted
+          const padRatio = settings.badgeShape === 'circle' ? 0.15 : 0.09;
+          const maxW = centerSize * (1 - padRatio * 2);
+          const maxH = centerSize * (1 - padRatio * 2);
+
+          let drawW = maxW;
+          let drawH = maxH;
+
+          if (aspect > 1) {
+            // Landscape: scale width to maxW, adjust height proportionally
+            drawW = maxW;
+            drawH = maxW / aspect;
+          } else {
+            // Portrait or square: scale height to maxH, adjust width proportionally
+            drawH = maxH;
+            drawW = maxH * aspect;
+          }
+
+          const drawX = (canvasPixelSize - drawW) / 2;
+          const drawY = (canvasPixelSize - drawH) / 2;
+
+          ctx.drawImage(img, 0, 0, imgW, imgH, drawX, drawY, drawW, drawH);
+        }
 
         ctx.restore();
       } catch (e) {

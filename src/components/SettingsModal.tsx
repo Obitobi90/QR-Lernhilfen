@@ -854,7 +854,43 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                       </button>
                     </div>
                   </div>
+
+                  {/* Proportion / Fit Selector */}
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-500 font-medium">Bild-Proportion:</span>
+                    <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setQrSettings((prev) => ({ ...prev, logoFit: 'contain' }))
+                        }
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                          (qrSettings.logoFit || 'contain') === 'contain'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                        title="Vollständig sichtbar, natürliche Seitenverhältnisse ohne Verzerrung"
+                      >
+                        Einpassen (1:1 unverzerrt)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setQrSettings((prev) => ({ ...prev, logoFit: 'cover' }))
+                        }
+                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                          qrSettings.logoFit === 'cover'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-slate-600 dark:text-slate-400'
+                        }`}
+                        title="Flächig füllen mit zentriertem Zuschnitt (unverzerrt)"
+                      >
+                        Fläche füllen
+                      </button>
+                    </div>
+                  </div>
                 </div>
+
 
                 {/* If image is active: detailed sketch controls */}
                 {qrSettings.rawUploadedImage && (
