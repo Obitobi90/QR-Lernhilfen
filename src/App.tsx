@@ -501,6 +501,10 @@ export default function App() {
             setQrModalItem(null);
             handleOpenStudentView(id);
           }}
+          onOpenSettings={() => {
+            setQrModalItem(null);
+            setIsSettingsOpen(true);
+          }}
         />
       )}
 

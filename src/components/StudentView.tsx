@@ -275,11 +275,15 @@ export const StudentView: React.FC<StudentViewProps> = ({
                 {item.grade_level}
               </span>
             )}
+            <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-xs border border-indigo-200 dark:border-indigo-800 break-all select-all">
+              Code: {item.id}
+            </span>
             <span>·</span>
             <span>{item.hints.length} gestufte {item.hints.length === 1 ? 'Tippkarte' : 'Tippkarten'}</span>
           </div>
 
-          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-snug">
+          {/* Title: Completely readable at a glance without truncation */}
+          <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-snug break-words">
             {item.title}
           </h1>
 
@@ -344,7 +348,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                       {index + 1}
                     </span>
                     <div>
-                      <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
+                      <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 break-words leading-snug">
                         {hint.title || `Tipp ${index + 1}`}
                       </h3>
                       {hasPin && !isPinUnlocked && (
@@ -455,7 +459,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
                               <Volume2 className="w-4 h-4 text-indigo-500" />
                               <span>Audio-Erklärung anhören</span>
                             </span>
-                            <audio controls src={hint.mediaData} className="w-full h-10" />
+                            <audio
+                              controls
+                              controlsList="nodownload"
+                              onContextMenu={(e) => e.preventDefault()}
+                              src={hint.mediaData}
+                              className="w-full h-10"
+                            />
                           </div>
                         )}
 

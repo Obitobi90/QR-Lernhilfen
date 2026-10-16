@@ -26,6 +26,7 @@ import {
   Check,
   Edit2,
   Unlink,
+  RotateCcw,
 } from 'lucide-react';
 
 interface TeacherViewProps {
@@ -38,7 +39,7 @@ interface TeacherViewProps {
   onOpenWorksheetQr?: (groupName: string, items: Lernhilfe[]) => void;
   onUngroupWorksheet?: (groupName: string) => void;
   onRenameWorksheet?: (oldName: string, newName: string) => void;
-  onDeleteWorksheet?: (groupName: string, items: Lernhilfe[]) => void;
+  onDeleteWorksheet?: (groupName: string, items?: Lernhilfe[]) => void;
   onOpenStats: (item: Lernhilfe) => void;
   onOpenPreview: (id: string) => void;
   onOpenSettings: () => void;
@@ -246,18 +247,18 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
             </div>
           </div>
 
-          {/* Title */}
-          <h3 className="font-bold text-base text-slate-900 dark:text-slate-100 leading-snug">
+          {/* Title: Completely readable at a glance without truncation */}
+          <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 leading-snug break-words">
             {item.title}
           </h3>
 
           {/* Prominent Lernhilfe-Code Badge with Copy button */}
           <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950/70 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs">
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 shrink-0">
                 Lernhilfe-Code:
               </span>
-              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300 text-xs truncate select-all">
+              <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300 text-xs break-all select-all">
                 {item.id}
               </span>
             </div>

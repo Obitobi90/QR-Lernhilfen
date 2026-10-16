@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Lernhilfe } from '../types';
+import { renderStyledQrCode } from '../utils/qrCodeTheme';
 import {
   X,
   Printer,
@@ -31,28 +32,29 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   const [copiedImgId, setCopiedImgId] = useState<string | null>(null);
   const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
 
-  useEffect(() => {
+  const renderAllQrs = () => {
     items.forEach((item) => {
       const canvas = canvasRefs.current[item.id];
       if (canvas) {
         const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
-        QRCode.toCanvas(
-          canvas,
-          studentUrl,
-          {
-            width: 220,
-            margin: 2,
-            color: {
-              dark: '#0f172a',
-              light: '#ffffff',
-            },
-          },
-          (error) => {
-            if (error) console.error('QR code generation error:', error);
-          }
-        );
+        renderStyledQrCode(canvas, studentUrl, { size: 240 }).catch((error) => {
+          if (error) console.error('QR code generation error:', error);
+        });
       }
     });
+  };
+
+  useEffect(() => {
+    renderAllQrs();
+
+    const handleDesignChange = () => {
+      renderAllQrs();
+    };
+
+    window.addEventListener('qr-design-changed', handleDesignChange);
+    return () => {
+      window.removeEventListener('qr-design-changed', handleDesignChange);
+    };
   }, [items]);
 
   const handleCopyLink = async (item: Lernhilfe) => {
@@ -184,26 +186,30 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
                       </span>
                     </div>
 
-                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-snug line-clamp-2">
+                    {/* Full Title, never clamped */}
+                    <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm leading-snug break-words">
                       {item.title}
                     </h4>
 
                     {item.task_context && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 print:line-clamp-none italic">
-                        {item.task_context.slice(0, 100)}...
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 break-words italic line-clamp-3 print:line-clamp-none">
+                        {item.task_context.slice(0, 140)}...
                       </p>
                     )}
                   </div>
 
-                  {/* QR Canvas */}
+                  {/* QR Canvas (Strict Square Aspect Ratio, Never Distorted) */}
                   <div className="my-3 flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-100 dark:border-slate-800 print:border-none">
                     <canvas
                       ref={(el) => {
                         canvasRefs.current[item.id] = el;
                       }}
-                      className="w-40 h-40 object-contain mx-auto"
+                      width={240}
+                      height={240}
+                      style={{ width: '160px', height: '160px', aspectRatio: '1 / 1', display: 'block' }}
+                      className="rounded-lg mx-auto shrink-0"
                     />
-                    <div className="mt-1.5 px-2 py-0.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded font-mono text-[11px] font-bold text-slate-800 dark:text-slate-200 print:text-[10px] print:border-slate-300">
+                    <div className="mt-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md font-mono text-xs font-bold text-slate-900 dark:text-slate-100 print:text-[10px] print:border-slate-300 break-all select-all text-center">
                       Code: {item.id}
                     </div>
                   </div>

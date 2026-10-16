@@ -280,15 +280,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                       onClick={() => onOpenItem(match.id)}
                       className="w-full p-2.5 bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-800/60 hover:border-purple-400 rounded-lg flex items-center justify-between text-left gap-2 transition-all hover:shadow-xs group"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         {match.group_name && (
-                          <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 block truncate">
+                          <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 block break-words">
                             📋 {match.group_name}
                           </span>
                         )}
-                        <h4 className="font-bold text-xs text-slate-900 dark:text-slate-100 truncate group-hover:text-purple-600 dark:group-hover:text-purple-400">
+                        <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-slate-100 break-words group-hover:text-purple-600 dark:group-hover:text-purple-400 leading-snug">
                           {match.title}
                         </h4>
+                        <span className="font-mono text-[11px] font-bold text-indigo-600 dark:text-indigo-400 block mt-0.5">
+                          Code: {match.id}
+                        </span>
                       </div>
                       <span className="px-2 py-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 text-[10px] font-bold rounded-md shrink-0 flex items-center gap-1 group-hover:bg-purple-600 group-hover:text-white transition-colors">
                         <span>Öffnen</span>

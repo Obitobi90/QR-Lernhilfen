@@ -199,7 +199,14 @@ export const AudioRecorder: React.FC<AudioRecorderProps> = ({
           <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
             Vorschau der Sprachnachricht:
           </div>
-          <audio controls src={audioUrl} className="w-full h-9" preload="metadata" />
+          <audio
+            controls
+            controlsList="nodownload"
+            onContextMenu={(e) => e.preventDefault()}
+            src={audioUrl}
+            className="w-full h-9"
+            preload="metadata"
+          />
         </div>
       )}
     </div>
