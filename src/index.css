@@ -60,9 +60,11 @@
   word-break: keep-all !important;
 }
 
-/* Dark mode adjustments for KaTeX */
-.dark .katex {
-  color: #f1f5f9 !important;
+/* Dark mode adjustments for KaTeX (on screen only) */
+@media screen {
+  .dark .katex {
+    color: #f1f5f9 !important;
+  }
 }
 
 /* Custom scrollbars */
@@ -81,22 +83,106 @@
   background: rgba(156, 163, 175, 0.7);
 }
 
-/* Print styles for classroom QR cards */
+/* =========================================================
+   PRINT STYLES FOR CLASSROOM QR CARDS & WORKSHEET SHEETS
+   ========================================================= */
 @media print {
-  body {
-    background: white !important;
-    color: black !important;
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 10mm 10mm;
   }
-  .no-print {
+
+  /* Reset body to pristine white background and black text */
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* CRITICAL: KaTeX Formulas MUST BE PURE CRISP BLACK on paper */
+  .katex,
+  .katex *,
+  .katex-html,
+  .inline-math,
+  .katex-display {
+    color: #000000 !important;
+    text-shadow: none !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+  }
+
+  .katex .frac-line {
+    border-bottom: 1.2px solid #000000 !important;
+  }
+
+  .katex .sqrt > .sqrt-sign {
+    color: #000000 !important;
+  }
+
+  .katex-display {
+    margin: 0.5rem 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Hide screen-only interactive controls */
+  .no-print,
+  button,
+  nav,
+  header.no-print,
+  footer.no-print {
     display: none !important;
   }
+
   .print-only {
     display: block !important;
   }
+
+  /* Remove modal viewport clipping so all cards print across pages */
+  .printable-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    display: block !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .printable-modal-dialog {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  .printable-modal-body {
+    overflow: visible !important;
+    max-height: none !important;
+    padding: 0 !important;
+  }
+
   .print-card {
     page-break-inside: avoid;
     break-inside: avoid;
-    border: 1px dashed #cbd5e1 !important;
-    padding: 1.5rem !important;
+    border: 1.5px solid #94a3b8 !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin-bottom: 1rem !important;
+  }
+
+  /* QR code canvas crisp print rendering */
+  canvas {
+    max-width: 100% !important;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
   }
 }

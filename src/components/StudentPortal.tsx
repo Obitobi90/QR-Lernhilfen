@@ -91,11 +91,14 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     setCodeError(null);
     setMultipleMatches([]);
     const cleaned = enteredCode.trim().toLowerCase();
+    const cleanedNoSpace = cleaned.replace(/\s+/g, '');
     if (!cleaned) return;
 
-    // Check direct match
+    // Check direct match (including numeric codes typed with or without space)
     const directMatch = items.find(
-      (item) => item.id.toLowerCase() === cleaned
+      (item) =>
+        item.id.toLowerCase() === cleaned ||
+        item.id.toLowerCase().replace(/\s+/g, '') === cleanedNoSpace
     );
 
     if (directMatch) {
@@ -106,7 +109,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
     // Check partial ID match, title match, or worksheet group_name match
     const matches = items.filter(
       (item) =>
+        item.id.toLowerCase() === cleaned ||
+        item.id.toLowerCase().replace(/\s+/g, '') === cleanedNoSpace ||
         item.id.toLowerCase().includes(cleaned) ||
+        item.id.toLowerCase().replace(/\s+/g, '').includes(cleanedNoSpace) ||
         item.title.toLowerCase().includes(cleaned) ||
         (item.group_name && item.group_name.toLowerCase().includes(cleaned))
     );
@@ -236,10 +242,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           <form onSubmit={handleCodeSubmit} className="space-y-3 pt-2 text-left">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                Lernhilfe-Code oder Aufgabennamen eingeben:
+                Lernhilfe-Code (Zahlen) oder Aufgabennamen eingeben:
               </label>
               <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">
-                Der Code steht auf dem Arbeitsblatt direkt unter dem QR-Code (z. B. <span className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">{items[0]?.id || 'leiter-aufgabe'}</span>)
+                Der Zahlencode steht auf dem Arbeitsblatt direkt unter dem QR-Code (z. B. <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{items[0]?.id || '482105'}</span>)
               </span>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -247,14 +253,15 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
+                  inputMode="text"
                   value={enteredCode}
                   onChange={(e) => {
                     setEnteredCode(e.target.value);
                     if (codeError) setCodeError(null);
                     if (multipleMatches.length > 0) setMultipleMatches([]);
                   }}
-                  placeholder="Lernhilfe-Code oder Stichwort (z. B. leiter, pythagoras)..."
-                  className="w-full pl-9 pr-3.5 py-3 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400"
+                  placeholder="Zahlencode eingeben (z. B. 482105) oder Aufgabentitel..."
+                  className="w-full pl-9 pr-3.5 py-3 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 font-medium"
                 />
               </div>
               <button

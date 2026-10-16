@@ -349,7 +349,14 @@ export const StudentView: React.FC<StudentViewProps> = ({
                     </span>
                     <div>
                       <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 break-words leading-snug">
-                        {hint.title || `Tipp ${index + 1}`}
+                        {(() => {
+                          const raw = (hint.title || '').trim();
+                          if (!raw) return `Tipp ${index + 1}`;
+                          // Strip leading "Tipp X:" or "Tipp X." or "Tipp X"
+                          const cleaned = raw.replace(new RegExp(`^Tipp\\s*${index + 1}[:.]?\\s*`, 'i'), '').trim();
+                          if (!cleaned) return `Tipp ${index + 1}`;
+                          return `Tipp ${index + 1}: ${cleaned}`;
+                        })()}
                       </h3>
                       {hasPin && !isPinUnlocked && (
                         <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5">
@@ -551,18 +558,32 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
           {/* Stepped Next Button (Progressive Disclosure) */}
           {unlockedCount < item.hints.length && (
-            <div className="pt-3 text-center space-y-2">
+            <div className="pt-3 text-center space-y-2.5">
               <button
                 type="button"
                 onClick={() => handleRevealNext(unlockedCount)}
-                className="w-full py-4 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-bold text-sm sm:text-base shadow-md hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2.5 min-h-[52px]"
+                className="w-full py-3.5 px-5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-bold text-sm sm:text-base shadow-md hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2.5 min-h-[50px]"
               >
                 <Sparkles className="w-5 h-5 text-indigo-200" />
-                <span>
-                  Nächsten Tipp anzeigen ({item.hints[unlockedCount]?.title || `Tipp ${unlockedCount + 1}`})
-                </span>
+                <span>Nächsten Tipp anzeigen</span>
               </button>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+
+              {/* Title of next tip displayed on a separate line below the button */}
+              {(() => {
+                const rawNext = item.hints[unlockedCount]?.title || '';
+                const cleanNextTitle = rawNext.replace(new RegExp(`^Tipp\\s*${unlockedCount + 1}[:.]?\\s*`, 'i'), '').trim();
+                const displayNext = cleanNextTitle || rawNext || `Denkanstoß ${unlockedCount + 1}`;
+                return (
+                  <div className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1.5 flex-wrap px-2">
+                    <span className="text-slate-400 dark:text-slate-500">Titel von Tipp {unlockedCount + 1}:</span>
+                    <span className="font-extrabold text-indigo-600 dark:text-indigo-400 break-words">
+                      {displayNext}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
                 💡 Versuche erst mit den vorhandenen Tipps weiterzukommen, bevor du den nächsten öffnest.
               </p>
             </div>

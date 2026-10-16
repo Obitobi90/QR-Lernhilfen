@@ -7,6 +7,7 @@ import {
   deleteLernhilfe,
   getSupabaseSettings,
 } from './utils/supabaseClient';
+import { generateNumericLernhilfeId } from './utils/idGenerator';
 import { StudentView } from './components/StudentView';
 import { StudentPortal } from './components/StudentPortal';
 import { TeacherView } from './components/TeacherView';
@@ -213,7 +214,7 @@ export default function App() {
   const handleDuplicateLernhilfe = async (item: Lernhilfe) => {
     const duplicated: Lernhilfe = {
       ...item,
-      id: 'lh-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
+      id: generateNumericLernhilfeId(items.map((i) => i.id)),
       title: `${item.title} (Kopie)`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

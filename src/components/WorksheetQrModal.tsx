@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Lernhilfe } from '../types';
 import { renderStyledQrCode } from '../utils/qrCodeTheme';
+import { LaTeXRenderer } from '../utils/latexRenderer';
 import {
   X,
   Printer,
@@ -94,8 +95,8 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   const gradeLevel = items.find((i) => i.grade_level)?.grade_level;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs printable-modal-backdrop">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] printable-modal-dialog">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
           <div className="flex items-center gap-3 min-w-0">
@@ -147,69 +148,75 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             </span>
           </div>
           <span className="text-[11px] text-slate-400 hidden md:inline">
-            Tipp: Perfekt zum Ausschneiden oder direkten Einfügen in dein Arbeitsblatt.
+            Tipp: Perfekt zum Ausdrucken oder direkten Einfügen in dein Arbeitsblatt.
           </span>
         </div>
 
         {/* Scrollable Printable Content Area */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body">
           {/* Print-only Header */}
-          <div className="hidden print:block text-center pb-4 border-b border-slate-300">
-            <div className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">
+          <div className="hidden print:block text-center pb-4 border-b border-slate-400 mb-4">
+            <div className="text-[11px] uppercase tracking-wider text-slate-600 font-extrabold mb-1">
               Digitale Tippkarten &amp; Hilfen zum Arbeitsblatt
             </div>
-            <h1 className="text-2xl font-black text-slate-900 mb-1">{groupName}</h1>
-            <p className="text-xs text-slate-600">
-              {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code mit der Smartphone-Kamera für gestufte Denkanstöße.
+            <h1 className="text-2xl font-black text-black mb-1">{groupName}</h1>
+            <p className="text-xs text-slate-700">
+              {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code mit der Smartphone-Kamera oder gib den Zahlencode im Schülerportal ein.
             </p>
           </div>
 
           {/* Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-5">
             {items.map((item, idx) => {
               const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
 
               return (
                 <div
                   key={item.id}
-                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs print:border-slate-300 print:shadow-none print:break-inside-avoid"
+                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs print:border-2 print:border-slate-400 print:bg-white print:text-black print:shadow-none print:break-inside-avoid print:p-3.5 print-card"
                 >
                   {/* Card Title & Meta */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                      <span className="font-bold text-indigo-600 dark:text-indigo-400">
-                        Teilaufgabe {idx + 1}
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 print:text-slate-700">
+                      <span className="font-extrabold text-indigo-600 dark:text-indigo-400 print:text-black">
+                        Aufgabe {idx + 1}
                       </span>
-                      <span className="flex items-center gap-1 text-[11px]">
-                        <Layers className="w-3 h-3 text-slate-400" />
+                      <span className="flex items-center gap-1 text-[11px] print:text-slate-700">
+                        <Layers className="w-3 h-3 text-slate-400 print:text-slate-700" />
                         <span>{item.hints.length} {item.hints.length === 1 ? 'Tipp' : 'Tipps'}</span>
                       </span>
                     </div>
 
                     {/* Full Title, never clamped */}
-                    <h4 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm leading-snug break-words">
+                    <h4 className="font-extrabold text-slate-900 dark:text-slate-100 print:text-black text-sm leading-snug break-words">
                       {item.title}
                     </h4>
 
+                    {/* Written Task Context with Crisp Math Formula Rendering */}
                     {item.task_context && (
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 break-words italic line-clamp-3 print:line-clamp-none">
-                        {item.task_context.slice(0, 140)}...
-                      </p>
+                      <div className="text-xs text-slate-700 dark:text-slate-300 break-words leading-relaxed bg-slate-50/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800/60 print:bg-slate-50 print:border print:border-slate-300 print:text-black print:p-2">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 print:text-slate-600 mb-0.5">
+                          Aufgabenstellung:
+                        </div>
+                        <div className="text-xs print:text-black">
+                          <LaTeXRenderer content={item.task_context} />
+                        </div>
+                      </div>
                     )}
                   </div>
 
                   {/* QR Canvas (Strict Square Aspect Ratio, Never Distorted) */}
-                  <div className="my-3 flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-100 dark:border-slate-800 print:border-none">
+                  <div className="my-3 flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-100 dark:border-slate-800 print:border-none print:p-1">
                     <canvas
                       ref={(el) => {
                         canvasRefs.current[item.id] = el;
                       }}
                       width={240}
                       height={240}
-                      style={{ width: '160px', height: '160px', aspectRatio: '1 / 1', display: 'block' }}
-                      className="rounded-lg mx-auto shrink-0"
+                      style={{ width: '150px', height: '150px', aspectRatio: '1 / 1', display: 'block' }}
+                      className="rounded-lg mx-auto shrink-0 print:w-[130px] print:h-[130px]"
                     />
-                    <div className="mt-2 px-2.5 py-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md font-mono text-xs font-bold text-slate-900 dark:text-slate-100 print:text-[10px] print:border-slate-300 break-all select-all text-center">
+                    <div className="mt-2 px-3 py-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-xs font-bold text-slate-900 dark:text-slate-100 print:text-[11px] print:bg-white print:border-slate-400 print:text-black break-all select-all text-center">
                       Code: {item.id}
                     </div>
                   </div>

@@ -1,6 +1,8 @@
 import { Hint } from '../types';
+import { generateMathPedagogicalHints } from './mathPedagogicalAi';
 
 const STORAGE_KEY_GEMINI_KEY = 'lernhilfen_gemini_api_key';
+const STORAGE_KEY_GEMINI_MODEL = 'lernhilfen_gemini_model';
 
 export function getStoredGeminiKey(): string {
   try {
@@ -18,21 +20,45 @@ export function saveGeminiKey(key: string): void {
   }
 }
 
+export function getStoredGeminiModel(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY_GEMINI_MODEL) || 'gemini-3.8-flash';
+  } catch (e) {
+    return 'gemini-3.8-flash';
+  }
+}
+
+export function saveGeminiModel(model: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_GEMINI_MODEL, model.trim());
+  } catch (e) {
+    console.error('Failed to save Gemini model', e);
+  }
+}
+
 export interface GeneratedHintItem {
   title: string;
   text: string;
 }
 
+export interface GenerateHintsResult {
+  hints: GeneratedHintItem[];
+  engineUsed: 'user_gemini' | 'server_gemini' | 'free_math_ai';
+}
+
 /**
- * Generates stepped pedagogical hints (scaffolding) using Gemini Flash.
- * Strictly adheres to the rule: NEVER reveal the final answer or solution.
+ * Generates stepped pedagogical hints (scaffolding).
+ * Uses Google Gemini (if user configured a key in Options or server has key),
+ * or seamlessly defaults to the intelligent free Math & STEM Pedagogical AI engine.
+ * Never blocks or fails with "Kein API Key"!
  */
 export async function generateSteppedHintsWithAI(
   taskContext: string,
   taskTitle: string,
   imageBlobOrDataUrl?: string
-): Promise<GeneratedHintItem[]> {
+): Promise<GenerateHintsResult> {
   const userApiKey = getStoredGeminiKey();
+  const selectedModel = getStoredGeminiModel();
 
   const systemInstruction = `Du bist ein didaktisch erfahrener Pädagoge für gestufte Lernhilfen (Scaffolding) im Schulunterricht.
 Deine Aufgabe ist es, für eine gegebene Schüleraufgabe genau 3 bis 4 gestufte Denkanstöße (Tippkarten) zu generieren.
@@ -45,77 +71,81 @@ STRIKTE DIDAKTISCHE REGELN:
    - Tipp 3 (Strukturierung & erster Schritt): Vorschlag für den ersten Rechenschritt oder eine Skizze/Tabelle, ohne das Resultat zu berechnen.
    - Tipp 4 (Selbstkontrolle / Plausibilität, optional): Impuls zur Überprüfung des Vorgehens oder zur Einheitenkontrolle.
 3. Sprache: Deutsch, schülergerecht, ermutigend, klar formuliert.
-4. Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
+4. Formuliere kurze, prägnante Titel OHNE vorangestelltes 'Tipp 1:' (z. B. 'Problemstellung erfassen' statt 'Tipp 1: Problemstellung').
+5. Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
 [
   {
-    "title": "Tipp 1: [Prägnante Überschrift]",
+    "title": "[Prägnante Überschrift]",
     "text": "[Hilfestellung mit Formeln in $...$]"
-  },
-  ...
+  }
 ]`;
 
   const promptText = `Aufgabentitel: ${taskTitle || 'Aufgabe'}
 Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
 
-  // If user provided a client API key in localStorage, call Google Gemini REST API directly:
+  // 1. If user provided a client API key in Options, call Google Gemini REST API directly:
   if (userApiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(userApiKey)}`;
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(userApiKey)}`;
 
-    const contentsParts: any[] = [];
+      const contentsParts: any[] = [];
 
-    if (imageBlobOrDataUrl && imageBlobOrDataUrl.startsWith('data:image/')) {
-      const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
-      if (match) {
-        contentsParts.push({
-          inlineData: {
-            mimeType: match[1],
-            data: match[2],
-          },
-        });
+      if (imageBlobOrDataUrl && imageBlobOrDataUrl.startsWith('data:image/')) {
+        const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
+        if (match) {
+          contentsParts.push({
+            inlineData: {
+              mimeType: match[1],
+              data: match[2],
+            },
+          });
+        }
       }
-    }
 
-    contentsParts.push({
-      text: promptText,
-    });
+      contentsParts.push({
+        text: promptText,
+      });
 
-    const requestBody = {
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: contentsParts,
+      const requestBody = {
+        systemInstruction: {
+          parts: [{ text: systemInstruction }],
         },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.7,
-      },
-    };
+        contents: [
+          {
+            role: 'user',
+            parts: contentsParts,
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+        },
+      };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData?.error?.message || `Gemini API Fehler: Status ${res.status}`);
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          return {
+            hints: parseHintsJson(rawText),
+            engineUsed: 'user_gemini',
+          };
+        }
+      } else {
+        console.warn('User Gemini API call failed, trying server or free math fallback...');
+      }
+    } catch (err) {
+      console.warn('Error calling user Gemini API:', err);
     }
-
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) {
-      throw new Error('Keine Antwort von Gemini erhalten.');
-    }
-
-    return parseHintsJson(rawText);
   }
 
-  // Fallback: try calling server-side proxy route if configured
+  // 2. Try calling server-side proxy route if server has key configured
   try {
     const serverRes = await fetch('/api/gemini/generate-hints', {
       method: 'POST',
@@ -129,15 +159,23 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
 
     if (serverRes.ok) {
       const json = await serverRes.json();
-      if (Array.isArray(json.hints)) {
-        return json.hints;
+      if (Array.isArray(json.hints) && json.hints.length > 0) {
+        return {
+          hints: json.hints,
+          engineUsed: 'server_gemini',
+        };
       }
     }
   } catch (e) {
-    // Continue to error message
+    // Continue to free math AI engine
   }
 
-  throw new Error('Kein Gemini API-Key hinterlegt! Bitte trage deinen API-Key in den Einstellungen oben rechts ein.');
+  // 3. Standard Free AI Engine (Specialized for Math & STEM, zero configuration, zero cost!)
+  const freeHints = generateMathPedagogicalHints(taskContext, taskTitle);
+  return {
+    hints: freeHints,
+    engineUsed: 'free_math_ai',
+  };
 }
 
 function parseHintsJson(rawText: string): GeneratedHintItem[] {
@@ -151,10 +189,17 @@ function parseHintsJson(rawText: string): GeneratedHintItem[] {
 
   const parsed = JSON.parse(cleaned);
   if (Array.isArray(parsed)) {
-    return parsed.map((item, idx) => ({
-      title: item.title || `Tipp ${idx + 1}: Denkanstoß`,
-      text: item.text || '',
-    }));
+    return parsed.map((item, idx) => {
+      // Clean any accidental "Tipp 1:" prefix from titles so it's never duplicated
+      const cleanTitle = (item.title || `Denkanstoß ${idx + 1}`)
+        .replace(new RegExp(`^Tipp\\s*${idx + 1}[:.]?\\s*`, 'i'), '')
+        .trim();
+
+      return {
+        title: cleanTitle || `Denkanstoß ${idx + 1}`,
+        text: item.text || '',
+      };
+    });
   }
   throw new Error('Ungültiges Antwortformat der KI.');
 }
@@ -195,66 +240,59 @@ export async function extractTaskTextFromImage(
       }
     } else {
       const errJson = await serverRes.json().catch(() => ({}));
-      // If server returned an explicit error message and there's no user API key, throw it
       if (!userApiKey && errJson?.error) {
         throw new Error(errJson.error);
       }
     }
-  } catch (e: any) {
+  } catch (err: any) {
     if (!userApiKey) {
-      throw e;
+      throw new Error(
+        'Für automatische Foto-Texterkennung (OCR) kannst du unter Optionen einen Google Gemini API-Key hinterlegen. Du kannst die Aufgabe auch direkt als Text eingeben.'
+      );
     }
   }
 
-  // 2. Client-side fallback if user provided a key in localStorage
+  // 2. Fallback to client-side direct Gemini call if user provided a key
   if (userApiKey) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(userApiKey)}`;
-
-    const contentsParts: any[] = [];
-    if (imageBlobOrDataUrl.startsWith('data:image/')) {
-      const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-      if (match) {
-        contentsParts.push({
-          inlineData: {
-            mimeType: match[1],
-            data: match[2],
-          },
-        });
-      }
+    const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error('Ungültiges Bildformat für Texterkennung.');
     }
 
-    contentsParts.push({
-      text: 'Bitte extrahiere den Aufgabentext und alle mathematischen Formeln und Zahlen exakt aus diesem Foto und verschriftliche die Aufgabenstellung.',
-    });
+    const mimeType = match[1];
+    const base64Data = match[2];
 
-    const systemInstruction = `Du bist ein hochpräziser didaktischer Assistent für Texterkennung (OCR) und mathematische Transkription von Schulaufgaben, Arbeitsblättern und Schulbuchseiten.
-Deine Aufgabe ist es, den Aufgabentext aus dem Foto präzise, strukturiert und vollständig auf Deutsch zu verschriftlichen.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(userApiKey)}`;
 
-STRIKTE REGELN FÜR DIE TRANSKRIPTION:
-1. MATHEMATISCHE FORMELN & SYMBOLE:
-   Alle Formeln, Terme, Brüche, Wurzeln, Exponenten, Gleichungen und Variablen MÜSSEN in korrektem LaTeX formatiert werden:
-   - Inline-Formeln in einfache Dollarzeichen: z.B. $f(x) = 2x^2 - 4x + 1$, $a^2 + b^2 = c^2$, $\\frac{3}{4}$, $\\sqrt{49} = 7$, $v = 50\\,\\text{km/h}$
-   - Abgesetzte Formeln in doppelte Dollarzeichen: $$c = \\sqrt{a^2 + b^2}$$
-2. STRUKTUR:
-   Behalte Aufzählungen, Teilaufgaben (a, b, c) und Absätze exakt bei.
-3. KORREKTHEIT:
-   Verschriftliche exakt das, was auf dem Aufgabenfoto steht, ohne Lösung oder Abweichungen.
+    const promptText = `Du bist ein Experte für mathematische und naturwissenschaftliche Texterkennung (OCR).
+Deine Aufgabe ist es, aus dem beigefügten Foto eines Schulbuchs, Arbeitsblatts oder einer handschriftlichen Aufgabe:
+1. Den Aufgabentext exakt und vollständig abzuschreiben.
+2. Alle mathematischen Ausdrücke, Gleichungen, Brüche, Wurzeln und Potenzen sauber in LaTeX zu formatieren ($...$ inline oder $$...$$ für abgesetzte Formeln).
+3. Einen treffenden kurzen Aufgabentitel vorzuschlagen.
+4. Das Schulfach zu erkennen (Mathematik, Physik, Chemie, Biologie oder Sonstiges).
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
 {
-  "extractedText": "[Vollständiger transkribierter Aufgabentext mit sauberem LaTeX $...$]",
-  "suggestedTitle": "[Prägnanter Titel der Aufgabe]",
+  "extractedText": "[Vollständiger Aufgabentext mit Formeln in $...$]",
+  "suggestedTitle": "[Kurzer prägnanter Titel der Aufgabe]",
   "detectedSubject": "Mathematik"
 }`;
 
     const requestBody = {
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-      },
       contents: [
         {
           role: 'user',
-          parts: contentsParts,
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            },
+            {
+              text: promptText,
+            },
+          ],
         },
       ],
       generationConfig: {
@@ -271,14 +309,12 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new Error(errData?.error?.message || `Gemini API Fehler: Status ${res.status}`);
+      throw new Error(errData?.error?.message || `Texterkennung fehlgeschlagen (Status ${res.status})`);
     }
 
     const data = await res.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) {
-      throw new Error('Keine Antwort von Gemini erhalten.');
-    }
+    if (!rawText) throw new Error('Keine Antwort von der Texterkennung erhalten.');
 
     let cleaned = rawText.trim();
     if (cleaned.startsWith('```json')) {
@@ -290,11 +326,12 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
     const parsed = JSON.parse(cleaned);
     return {
       extractedText: parsed.extractedText || '',
-      suggestedTitle: parsed.suggestedTitle || undefined,
-      detectedSubject: parsed.detectedSubject || undefined,
+      suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
+      detectedSubject: parsed.detectedSubject?.trim() || undefined,
     };
   }
 
-  throw new Error('Kein Gemini API-Key aktiv. Bitte prüfe die API-Key-Konfiguration in den Einstellungen.');
+  throw new Error(
+    'Für automatische Foto-Texterkennung (OCR) kannst du unter Optionen einen Google Gemini API-Key hinterlegen. Du kannst die Aufgabe auch direkt als Text eingeben.'
+  );
 }
-

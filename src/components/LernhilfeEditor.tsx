@@ -3,6 +3,7 @@ import { Lernhilfe, Hint, MediaType } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { parseYouTubeUrl, parseGeoGebraUrl, parseH5PUrl } from '../utils/mediaParser';
 import { generateSteppedHintsWithAI, extractTaskTextFromImage } from '../utils/geminiGenerator';
+import { generateNumericLernhilfeId } from '../utils/idGenerator';
 import { uploadMediaToSupabase } from '../utils/supabaseClient';
 import { MathFormulaHelper } from './MathFormulaHelper';
 import { AudioRecorder } from './AudioRecorder';
@@ -30,6 +31,7 @@ import {
   CheckCircle2,
   Wand2,
   RotateCcw,
+  RefreshCw,
   FileSpreadsheet,
   FolderPlus,
 } from 'lucide-react';
@@ -67,6 +69,9 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const initialGrade = initialItem?.grade_level || 'Klasse 8';
   const isPresetGrade = standardGrades.includes(initialGrade);
 
+  const [numericId, setNumericId] = useState<string>(
+    initialItem?.id || generateNumericLernhilfeId()
+  );
   const [title, setTitle] = useState(initialItem?.title || '');
   const [titleError, setTitleError] = useState<string | null>(null);
   const [subject, setSubject] = useState(initialItem?.subject || 'Mathematik');
@@ -85,7 +90,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       : [
           {
             id: 'hint-' + Date.now(),
-            title: 'Tipp 1: Denkanstoß zur Fragestellung',
+            title: 'Problemstellung erfassen & Skizze anfertigen',
             text: '',
             mediaType: 'none',
           },
@@ -100,6 +105,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   // AI Stepped Hints Generation loading & state
   const [isGeneratingAi, setIsGeneratingAi] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
   const [previewTab, setPreviewTab] = useState<'editor' | 'preview'>('editor');
 
   // AI Task & Math Text Extraction state
@@ -193,12 +199,11 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
   // Add new hint
   const handleAddHint = () => {
-    const newIdx = hints.length + 1;
     setHints([
       ...hints,
       {
         id: 'hint-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-        title: `Tipp ${newIdx}: Weiterer Denkanstoß`,
+        title: 'Weiterer Denkanstoß',
         text: '',
         mediaType: 'none',
       },
@@ -261,19 +266,28 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
   // AI Generator trigger
   const handleGenerateAiHints = async () => {
-    if (!taskContext.trim() && !taskImage) {
-      alert('Bitte gib zuerst eine Aufgabenstellung ein oder lade ein Foto der Aufgabe hoch.');
-      return;
+    let effectiveContext = taskContext.trim();
+    let effectiveTitle = title.trim();
+
+    // If teacher hasn't typed anything yet, provide a friendly default math task so they see it work instantly!
+    if (!effectiveContext && !effectiveTitle && !taskImage) {
+      effectiveTitle = 'Satz des Pythagoras: Hypotenuse berechnen';
+      effectiveContext = 'Eine 5 m lange Feuerwehrleiter wird an einer Wand aufgestellt. Der Fußpunkt ist 3 m von der Hauswand entfernt. In welcher Höhe berührt die Leiter die Wand?';
+      setTitle(effectiveTitle);
+      setTaskContext(effectiveContext);
+    } else if (!effectiveContext && effectiveTitle) {
+      // Use title as context if context is empty
+      effectiveContext = `Aufgabe zum Thema: ${effectiveTitle}`;
     }
 
     setIsGeneratingAi(true);
     setAiError(null);
 
     try {
-      const generated = await generateSteppedHintsWithAI(taskContext, title, taskImage);
+      const result = await generateSteppedHintsWithAI(effectiveContext, effectiveTitle || 'Aufgabe', taskImage);
 
       // Convert generated hints to Hint items
-      const newHints: Hint[] = generated.map((gh, idx) => ({
+      const newHints: Hint[] = result.hints.map((gh, idx) => ({
         id: 'hint-ai-' + Date.now() + '-' + idx,
         title: gh.title,
         text: gh.text,
@@ -286,6 +300,17 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       } else {
         setHints([...hints, ...newHints]);
       }
+
+      if (result.engineUsed === 'user_gemini') {
+        setAiSuccessMessage('Gestufte Tipps mit deinem Google Gemini API-Key generiert!');
+      } else if (result.engineUsed === 'server_gemini') {
+        setAiSuccessMessage('Gestufte Tipps mit Gemini generiert!');
+      } else {
+        setAiSuccessMessage(
+          '✨ Gestufte Tipps erfolgreich mit kostenloser didaktischer Mathe-KI generiert!'
+        );
+      }
+      setTimeout(() => setAiSuccessMessage(null), 6000);
     } catch (err: any) {
       setAiError(err.message || 'Fehler bei der KI-Generierung');
     } finally {
@@ -303,7 +328,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     const resolvedGrade = (gradeLevel === 'custom' ? customGradeLevel : gradeLevel).trim();
 
     const item: Lernhilfe = {
-      id: initialItem?.id || 'lh-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
+      id: numericId || initialItem?.id || generateNumericLernhilfeId(),
       title: title.trim(),
       subject: subject.trim(),
       grade_level: resolvedGrade || undefined,
@@ -323,9 +348,27 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       {/* Editor Header Bar */}
       <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-            {initialItem ? 'Lernhilfe bearbeiten' : 'Neue Lernhilfe erstellen'}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              {initialItem ? 'Lernhilfe bearbeiten' : 'Neue Lernhilfe erstellen'}
+            </span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800">
+              <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300">
+                Lernhilfe-Code:
+              </span>
+              <span className="font-mono font-black text-xs sm:text-sm text-indigo-900 dark:text-indigo-100 tracking-wider select-all">
+                {numericId}
+              </span>
+              <button
+                type="button"
+                onClick={() => setNumericId(generateNumericLernhilfeId())}
+                title="Neuen 6-stelligen Zahlencode automatisch generieren"
+                className="p-1 text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded-md transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
           <h2 className="text-lg sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
             Didaktischer Tippkarten-Editor
           </h2>
@@ -397,9 +440,26 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2"
                 >
                   <div className="flex items-center justify-between font-bold text-sm">
-                    <span>
-                      Tipp {i + 1}: {h.title}
-                    </span>
+                    {(() => {
+                      const raw = (h.title || '').trim();
+                      // Strip any leading "Tipp X:" or "Tipp X." or "Tipp X"
+                      let cleanTitle = raw.replace(/^Tipp\s*\d+[:.]?\s*/i, '').trim();
+                      cleanTitle = cleanTitle.replace(/^Tipp\s*\d*[:.]?\s*/i, '').trim();
+
+                      if (!cleanTitle) {
+                        return (
+                          <span className="break-words font-extrabold text-slate-900 dark:text-slate-100">
+                            Tipp {i + 1}
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span className="break-words font-extrabold text-slate-900 dark:text-slate-100">
+                          Tipp {i + 1}: <span className="font-semibold text-slate-700 dark:text-slate-300">{cleanTitle}</span>
+                        </span>
+                      );
+                    })()}
                     {h.pin && (
                       <span className="text-xs text-amber-600 font-mono bg-amber-50 dark:bg-amber-950 px-2 py-0.5 rounded">
                         PIN: {h.pin}
@@ -810,18 +870,26 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     </>
                   )}
                 </button>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Didaktisches Scaffolding (verrät nie die Lösung).
-                </span>
+                <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/80">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Kostenlose didaktische Mathe-KI (sofort aktiv ohne Key)</span>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="text-xs text-slate-400 hover:text-indigo-600 transition-colors"
+                className="text-xs text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors underline flex items-center gap-1"
               >
-                API-Key Einstellungen
+                <span>Optionen &amp; Eigener API-Key</span>
               </button>
             </div>
+
+            {aiSuccessMessage && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{aiSuccessMessage}</span>
+              </div>
+            )}
 
             {aiError && (
               <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-lg text-xs text-red-600 dark:text-red-400">
@@ -903,13 +971,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   {/* Title input on full-width row (never squished on phones) */}
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                      Tipp-Überschrift:
+                      Tipp-Überschrift (ohne „Tipp ${index + 1}:“ eingeben):
                     </label>
                     <input
                       type="text"
                       value={hint.title}
                       onChange={(e) => handleUpdateHint(index, { title: e.target.value })}
-                      placeholder={`z.B. Tipp ${index + 1}: Denkanstoß zur Fragestellung`}
+                      placeholder="z.B. Problemstellung erfassen &amp; Skizze anfertigen"
                       className="w-full font-bold text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                     />
                   </div>
