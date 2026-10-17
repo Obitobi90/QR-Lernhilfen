@@ -6,7 +6,9 @@ import {
   saveLernhilfe,
   deleteLernhilfe,
   getSupabaseSettings,
+  getSupabaseClient,
 } from './utils/supabaseClient';
+
 import { generateNumericLernhilfeId } from './utils/idGenerator';
 import { StudentView } from './components/StudentView';
 import { StudentPortal } from './components/StudentPortal';
@@ -67,7 +69,10 @@ export default function App() {
   } | null>(null);
   const [statsModalItem, setStatsModalItem] = useState<Lernhilfe | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(false);
+  const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(() => {
+    const sb = getSupabaseSettings();
+    return sb.enabled && !!sb.url && !!sb.anonKey;
+  });
 
   // Teacher Preview vs Real Student Access
   const [isTeacherPreview, setIsTeacherPreview] = useState<boolean>(false);
@@ -149,7 +154,28 @@ export default function App() {
 
   useEffect(() => {
     loadData();
+
+    // Check if teacher is authenticated via Supabase session
+    const client = getSupabaseClient();
+    if (client) {
+      client.auth.getSession().then(({ data }) => {
+        if (data?.session?.user) {
+          setTeacherSessionActive(true);
+          setIsTeacherAuthenticated(true);
+        }
+      });
+      const { data: authListener } = client.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setTeacherSessionActive(true);
+          setIsTeacherAuthenticated(true);
+        }
+      });
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
+    }
   }, []);
+
 
   // Student Navigation: Open Preview from Teacher Dashboard
   const handleOpenStudentView = (id: string) => {

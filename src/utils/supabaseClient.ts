@@ -129,7 +129,7 @@ export function getSupabaseSettings(): SupabaseSettings {
       return {
         url: parsed.url || DEFAULT_SUPABASE_URL,
         anonKey: parsed.anonKey || DEFAULT_SUPABASE_ANON_KEY,
-        enabled: parsed.enabled === true, // Only true if user explicitly enabled it
+        enabled: parsed.enabled !== false, // Enabled by default unless user explicitly disabled it
       };
     }
   } catch (e) {
@@ -138,9 +138,10 @@ export function getSupabaseSettings(): SupabaseSettings {
   return {
     url: DEFAULT_SUPABASE_URL,
     anonKey: DEFAULT_SUPABASE_ANON_KEY,
-    enabled: false,
+    enabled: true, // Cloud mode active by default
   };
 }
+
 
 export function saveSupabaseSettings(settings: SupabaseSettings): void {
   localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(settings));

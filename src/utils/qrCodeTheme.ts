@@ -37,7 +37,9 @@ export interface QrDesignSettings {
   sketchIntensity?: number; // 1 to 5
   badgeShape: 'circle' | 'rounded';
   logoFit?: 'contain' | 'cover'; // Aspect-ratio preservation mode
+  logoZoom?: number; // Zoom level e.g. 0.5 to 2.2 (default 1.0 = 100%)
 }
+
 
 
 export const QR_BORDER_OPTIONS: {
@@ -146,10 +148,12 @@ export function getDefaultQrDesignSettings(): QrDesignSettings {
     centerLogoType: 'none',
     badgeShape: 'rounded',
     logoFit: 'contain',
+    logoZoom: 1.0,
     sketchStyle: 'pencil',
     sketchIntensity: 3,
   };
 }
+
 
 
 export function getQrDesignSettings(): QrDesignSettings {
@@ -706,19 +710,22 @@ export async function renderStyledQrCode(
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
 
-        // Draw sketch image strictly preserving aspect ratio (NO DISTORTION / KEINE VERZERRUNG)
+        // Draw sketch image strictly preserving aspect ratio with customizable zoom (NO DISTORTION / KEINE VERZERRUNG)
         const fitMode = settings.logoFit || 'contain';
+        const zoom = typeof settings.logoZoom === 'number' && settings.logoZoom > 0 ? settings.logoZoom : 1.0;
         const imgW = img.naturalWidth || img.width || 1;
         const imgH = img.naturalHeight || img.height || 1;
         const aspect = imgW / imgH;
 
         if (fitMode === 'cover') {
-          // Cover mode: Fills the entire badge proportionally with centered crop, strictly undistorted
+          // Cover mode: Fills the entire badge proportionally with centered crop, strictly undistorted + zoom
           const pad = centerSize * 0.02;
-          const destW = centerSize - pad * 2;
-          const destH = centerSize - pad * 2;
-          const destX = centerX + pad;
-          const destY = centerY + pad;
+          const baseDestW = centerSize - pad * 2;
+          const baseDestH = centerSize - pad * 2;
+          const destW = baseDestW * zoom;
+          const destH = baseDestH * zoom;
+          const destX = (canvasPixelSize - destW) / 2;
+          const destY = (canvasPixelSize - destH) / 2;
 
           let srcX = 0;
           let srcY = 0;
@@ -737,7 +744,7 @@ export async function renderStyledQrCode(
 
           ctx.drawImage(img, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
         } else {
-          // Contain mode (default): Scales the entire drawing proportionally to fit inside badge, strictly undistorted
+          // Contain mode (default): Scales the entire drawing proportionally to fit inside badge, strictly undistorted + zoom
           const padRatio = settings.badgeShape === 'circle' ? 0.15 : 0.09;
           const maxW = centerSize * (1 - padRatio * 2);
           const maxH = centerSize * (1 - padRatio * 2);
@@ -755,11 +762,16 @@ export async function renderStyledQrCode(
             drawW = maxH * aspect;
           }
 
+          // Apply zoom factor smoothly
+          drawW = drawW * zoom;
+          drawH = drawH * zoom;
+
           const drawX = (canvasPixelSize - drawW) / 2;
           const drawY = (canvasPixelSize - drawH) / 2;
 
           ctx.drawImage(img, 0, 0, imgW, imgH, drawX, drawY, drawW, drawH);
         }
+
 
         ctx.restore();
       } catch (e) {

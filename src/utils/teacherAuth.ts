@@ -1,15 +1,20 @@
 const STORAGE_KEY_TEACHER_PIN = 'lernhilfen_teacher_pin';
 const STORAGE_KEY_TEACHER_AUTH = 'lernhilfen_teacher_authenticated';
 
-export const DEFAULT_TEACHER_PIN = '1234';
+export const DEFAULT_TEACHER_PIN = '4112023';
 
 /**
- * Returns the currently set Teacher PIN (default: '1234')
+ * Returns the currently set Teacher PIN (default: '4112023')
  */
 export function getTeacherPin(): string {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_TEACHER_PIN);
-    if (stored && stored.trim().length > 0) {
+    // If user previously had the old default '1234', migrate to '4112023'
+    if (stored === '1234' || !stored) {
+      localStorage.setItem(STORAGE_KEY_TEACHER_PIN, DEFAULT_TEACHER_PIN);
+      return DEFAULT_TEACHER_PIN;
+    }
+    if (stored.trim().length > 0) {
       return stored.trim();
     }
   } catch (e) {
@@ -42,7 +47,7 @@ export function checkTeacherPin(enteredPin: string): boolean {
 }
 
 /**
- * Checks whether the current browser session has unlocked the teacher dashboard
+ * Checks whether the teacher is authenticated and stays logged in persistently across sessions
  */
 export function isTeacherSessionActive(): boolean {
   try {
@@ -53,7 +58,7 @@ export function isTeacherSessionActive(): boolean {
 }
 
 /**
- * Sets the teacher authentication state in the browser
+ * Sets the teacher authentication state in the browser (persisted in localStorage)
  */
 export function setTeacherSessionActive(active: boolean): void {
   try {

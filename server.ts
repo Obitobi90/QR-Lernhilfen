@@ -34,22 +34,35 @@ app.post('/api/gemini/generate-hints', async (req, res) => {
       });
     }
 
-    const systemInstruction = `Du bist ein erfahrener Pädagoge für gestufte Lernhilfen (Scaffolding) im Schulunterricht.
+    const systemInstruction = `Du bist ein didaktisch erfahrener Pädagoge für gestufte Lernhilfen (Scaffolding) im Schulunterricht für alle Fächer.
 Deine Aufgabe ist es, für eine gegebene Schüleraufgabe genau 3 bis 4 gestufte Denkanstöße (Tippkarten) zu generieren.
 
 STRIKTE DIDAKTISCHE REGELN:
 1. Verrate NIEMALS die direkte Lösung, das Endergebnis oder fertige Rechenergebnisse!
 2. Die Tipps müssen didaktisch gestuft sein:
-   - Tipp 1 (Verstehen & Aktivieren): Formulierung der Problemstellung in eigenen Worten, Klären von gegebenen und gesuchten Größen.
+   - Tipp 1 (Verstehen & Aktivieren): Formulierung der Problemstellung in eigenen Worten, Klären von gegebenen und gesuchten Größen bzw. Leitfragen.
    - Tipp 2 (Strategie & Werkzeug): Denkanstoß zur geeigneten Formel, Regel oder Methode. Nutze LaTeX für mathematische Formeln ($...$ für inline oder $$...$$ für abgesetzte Formeln).
    - Tipp 3 (Strukturierung & erster Schritt): Vorschlag für den ersten Rechenschritt oder eine Skizze/Tabelle, ohne das Resultat zu berechnen.
    - Tipp 4 (Selbstkontrolle / Plausibilität, optional): Impuls zur Überprüfung des Vorgehens oder zur Einheitenkontrolle.
 3. Sprache: Deutsch, schülergerecht, ermutigend, klar formuliert.
-4. Antworte AUSSCHLIESSLICH als gültiges JSON-Array:
+4. Formuliere kurze, prägnante Titel OHNE vorangestelltes 'Tipp 1:' (z. B. 'Problemstellung erfassen' statt 'Tipp 1: Problemstellung').
+
+DIDAKTISCHE MEDIEN (OPTIONAL & GEZIELT):
+Du darfst bei bestimmten Tipps passende Medien einpflegen, wenn es an der jeweiligen Stelle sinnvoll ist:
+- "image": Ein selbst erstelltes sauberes SVG-Diagramm / Skizze als data:image/svg+xml;utf8,... (z. B. Dreiecksskizze, Koordinatensystem, Ablaufdiagramm).
+- "youtube": Ein didaktisch passendes YouTube-Video (z. B. https://www.youtube.com/watch?v=kY8c2_367gA).
+- "geogebra": Ein passendes interaktives GeoGebra-Modell (z. B. https://www.geogebra.org/m/k3mqfqea).
+- "h5p": Eine passende H5P-Selbsttest-Übung (z. B. https://h5p.org/h5p/embed/104101).
+- "audio": Eine vorbereitete Audio-Erklärung oder Sprachtipp (DataUrl oder URL).
+- "none": Standardwert für Tipps ohne zusätzliches Medium.
+
+Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
 [
   {
-    "title": "Tipp 1: [Prägnante Überschrift]",
-    "text": "[Hilfestellung mit Formeln in $...$]"
+    "title": "[Prägnante Überschrift]",
+    "text": "[Hilfestellung mit Formeln in $...$]",
+    "mediaType": "none" | "image" | "youtube" | "geogebra" | "h5p" | "audio",
+    "mediaData": "[Optional: SVG data:image/svg+xml,... oder URL falls mediaType != 'none']"
   }
 ]`;
 
@@ -701,6 +714,103 @@ app.delete('/api/lernhilfen/:id', (req, res) => {
   itemsDb = itemsDb.filter((i) => i.id !== id);
   saveItemsToDisk();
   return res.json({ success: true });
+});
+
+// ==========================================
+// URL SHORTENER API & REDIRECT ROUTES
+// ==========================================
+const shortUrlMemoryCache = new Map<string, string>();
+
+async function shortenSingleUrl(longUrl: string): Promise<string> {
+  const trimmed = longUrl.trim();
+  if (!trimmed) return '';
+  if (shortUrlMemoryCache.has(trimmed)) {
+    return shortUrlMemoryCache.get(trimmed)!;
+  }
+
+  // 1. Try TinyURL API
+  try {
+    const response = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(trimmed)}`, {
+      signal: AbortSignal.timeout(4000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AIStudio/1.0',
+      },
+    });
+    if (response.ok) {
+      const shortUrl = (await response.text()).trim();
+      if (shortUrl && shortUrl.startsWith('http')) {
+        shortUrlMemoryCache.set(trimmed, shortUrl);
+        return shortUrl;
+      }
+    }
+  } catch (err: any) {
+    console.warn('TinyURL shortener failed, trying fallback:', err?.message);
+  }
+
+  // 2. Try da.gd API as fallback
+  try {
+    const response2 = await fetch(`https://da.gd/s?url=${encodeURIComponent(trimmed)}`, {
+      signal: AbortSignal.timeout(4000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AIStudio/1.0',
+      },
+    });
+    if (response2.ok) {
+      const shortUrl2 = (await response2.text()).trim();
+      if (shortUrl2 && shortUrl2.startsWith('http')) {
+        shortUrlMemoryCache.set(trimmed, shortUrl2);
+        return shortUrl2;
+      }
+    }
+  } catch (err2: any) {
+    console.warn('da.gd shortener failed:', err2?.message);
+  }
+
+  // Fallback: return original trimmed URL if external shortener unreachable
+  return trimmed;
+}
+
+// Shorten single or multiple URLs
+app.post('/api/shorten-url', async (req, res) => {
+  try {
+    const { url, urls } = req.body;
+    if (url && typeof url === 'string') {
+      const shortUrl = await shortenSingleUrl(url);
+      return res.json({
+        shortUrl,
+        displayUrl: shortUrl.replace(/^https?:\/\//, ''),
+      });
+    }
+
+    if (Array.isArray(urls)) {
+      const results: Record<string, string> = {};
+      await Promise.all(
+        urls.map(async (u) => {
+          if (typeof u === 'string') {
+            const short = await shortenSingleUrl(u);
+            results[u] = short;
+          }
+        })
+      );
+      return res.json({ results });
+    }
+
+    return res.status(400).json({ error: 'Missing url or urls parameter' });
+  } catch (e: any) {
+    console.error('Error in /api/shorten-url:', e);
+    return res.status(500).json({ error: e.message || 'Failed to shorten URL' });
+  }
+});
+
+// Direct short redirect routes for fast browser typing
+app.get('/t/:id', (req, res) => {
+  const { id } = req.params;
+  return res.redirect(`/?id=${encodeURIComponent(id)}`);
+});
+
+app.get('/s/:id', (req, res) => {
+  const { id } = req.params;
+  return res.redirect(`/?id=${encodeURIComponent(id)}`);
 });
 
 async function startServer() {

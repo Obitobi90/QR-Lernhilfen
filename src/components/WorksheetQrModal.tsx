@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import QRCode from 'qrcode';
 import { Lernhilfe } from '../types';
 import { renderStyledQrCode } from '../utils/qrCodeTheme';
 import { LaTeXRenderer } from '../utils/latexRenderer';
+import {
+  shortenUrlsBatch,
+  getCachedShortUrl,
+  formatDisplayShortUrl,
+} from '../utils/urlShortener';
 import {
   X,
   Printer,
@@ -14,6 +18,8 @@ import {
   Layers,
   GraduationCap,
   Sparkles,
+  Link2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface WorksheetQrModalProps {
@@ -32,6 +38,48 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedImgId, setCopiedImgId] = useState<string | null>(null);
   const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+
+  // Shortened URLs cache per task ID
+  const [shortUrls, setShortUrls] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    items.forEach((item) => {
+      const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+      const cached = getCachedShortUrl(studentUrl);
+      if (cached) initial[item.id] = cached;
+    });
+    return initial;
+  });
+
+  // Fetch short URLs for all items on sheet
+  useEffect(() => {
+    let isCancelled = false;
+    const urlMap: Record<string, string> = {};
+    const longUrls: string[] = [];
+
+    items.forEach((item) => {
+      const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+      urlMap[studentUrl] = item.id;
+      longUrls.push(studentUrl);
+    });
+
+    shortenUrlsBatch(longUrls).then((results) => {
+      if (isCancelled) return;
+      const updated: Record<string, string> = {};
+      Object.entries(results).forEach(([longUrl, short]) => {
+        const itemId = urlMap[longUrl];
+        if (itemId) {
+          updated[itemId] = short;
+        }
+      });
+      setShortUrls((prev) => ({ ...prev, ...updated }));
+    }).catch((err) => {
+      console.warn('Failed to load short URLs:', err);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [items]);
 
   const renderAllQrs = () => {
     items.forEach((item) => {
@@ -59,9 +107,11 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   }, [items]);
 
   const handleCopyLink = async (item: Lernhilfe) => {
-    const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+    const targetUrl =
+      shortUrls[item.id] ||
+      `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
     try {
-      await navigator.clipboard.writeText(studentUrl);
+      await navigator.clipboard.writeText(targetUrl);
       setCopiedId(item.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch (e) {
@@ -144,11 +194,11 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
             <span>
-              Dieses Arbeitsblatt enthält <strong>{items.length} {items.length === 1 ? 'Aufgabe' : 'Aufgaben'}</strong> mit jeweils individuellen gestuften Tippkarten.
+              Dieses Arbeitsblatt enthält <strong>{items.length} {items.length === 1 ? 'Aufgabe' : 'Aufgaben'}</strong> mit jeweils individuellen gestuften Tippkarten und <strong>gekürzten Direkt-URLs</strong>.
             </span>
           </div>
           <span className="text-[11px] text-slate-400 hidden md:inline">
-            Tipp: Perfekt zum Ausdrucken oder direkten Einfügen in dein Arbeitsblatt.
+            Tipp: Schüler ohne QR-Scanner tippen einfach den kurzen Link im Smartphone-Browser ein.
           </span>
         </div>
 
@@ -161,15 +211,13 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             </div>
             <h1 className="text-2xl font-black text-black mb-1">{groupName}</h1>
             <p className="text-xs text-slate-700">
-              {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code mit der Smartphone-Kamera oder gib den Zahlencode im Schülerportal ein.
+              {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code mit der Smartphone-Kamera oder tippe die Direkt-URL im Browser ein.
             </p>
           </div>
 
           {/* Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-5">
             {items.map((item, idx) => {
-              const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
-
               return (
                 <div
                   key={item.id}
@@ -216,8 +264,31 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
                       style={{ width: '150px', height: '150px', aspectRatio: '1 / 1', display: 'block' }}
                       className="rounded-lg mx-auto shrink-0 print:w-[130px] print:h-[130px]"
                     />
-                    <div className="mt-2 px-3 py-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg font-mono text-xs font-bold text-slate-900 dark:text-slate-100 print:text-[11px] print:bg-white print:border-slate-400 print:text-black break-all select-all text-center">
-                      Code: {item.id}
+
+                    {/* Shortened Direct URL under the QR Code */}
+                    <div className="mt-2 w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-lg print:border print:border-slate-400 print:bg-white print:p-1.5 text-center">
+                      <div className="text-[9px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 print:text-slate-700 mb-0.5 flex items-center justify-center gap-1">
+                        <Link2 className="w-2.5 h-2.5 text-indigo-500 print:hidden" />
+                        <span>Direkt-URL zur Tippkarte:</span>
+                      </div>
+                      <div className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400 print:text-[12px] print:text-black break-all select-all">
+                        {shortUrls[item.id] ? (
+                          <a
+                            href={shortUrls[item.id]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline text-indigo-700 dark:text-indigo-300 print:text-black print:no-underline font-extrabold"
+                            title="Tippkarten-Direktlink öffnen"
+                          >
+                            {formatDisplayShortUrl(shortUrls[item.id])}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 dark:text-slate-500 font-normal italic text-[11px] flex items-center justify-center gap-1.5 py-0.5">
+                            <RefreshCw className="w-3 h-3 animate-spin text-indigo-500 print:hidden" />
+                            <span>URL wird gekürzt...</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 

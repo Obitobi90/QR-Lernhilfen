@@ -1,5 +1,6 @@
-import { Hint } from '../types';
+import { Hint, MediaType } from '../types';
 import { generateMathPedagogicalHints } from './mathPedagogicalAi';
+import { findRelevantPedagogicalMedia } from './didacticMediaFactory';
 
 const STORAGE_KEY_GEMINI_KEY = 'lernhilfen_gemini_api_key';
 const STORAGE_KEY_GEMINI_MODEL = 'lernhilfen_gemini_model';
@@ -39,6 +40,8 @@ export function saveGeminiModel(model: string): void {
 export interface GeneratedHintItem {
   title: string;
   text: string;
+  mediaType?: MediaType;
+  mediaData?: string;
 }
 
 export interface GenerateHintsResult {
@@ -49,7 +52,7 @@ export interface GenerateHintsResult {
 /**
  * Generates stepped pedagogical hints (scaffolding).
  * Uses Google Gemini (if user configured a key in Options or server has key),
- * or seamlessly defaults to the intelligent free Math & STEM Pedagogical AI engine.
+ * or seamlessly defaults to the intelligent free Pedagogical Scaffolding AI engine.
  * Never blocks or fails with "Kein API Key"!
  */
 export async function generateSteppedHintsWithAI(
@@ -60,23 +63,35 @@ export async function generateSteppedHintsWithAI(
   const userApiKey = getStoredGeminiKey();
   const selectedModel = getStoredGeminiModel();
 
-  const systemInstruction = `Du bist ein didaktisch erfahrener Pädagoge für gestufte Lernhilfen (Scaffolding) im Schulunterricht.
+  const systemInstruction = `Du bist ein didaktisch erfahrener Pädagoge für gestufte Lernhilfen (Scaffolding) im Schulunterricht für alle Fächer.
 Deine Aufgabe ist es, für eine gegebene Schüleraufgabe genau 3 bis 4 gestufte Denkanstöße (Tippkarten) zu generieren.
 
 STRIKTE DIDAKTISCHE REGELN:
 1. Verrate NIEMALS die direkte Lösung, das Endergebnis oder fertige Zwischenergebnisse!
 2. Die Tipps müssen didaktisch gestuft sein:
-   - Tipp 1 (Verstehen & Aktivieren): Formulierung der Problemstellung in eigenen Worten, Klären von gegebenen und gesuchten Größen.
+   - Tipp 1 (Verstehen & Aktivieren): Formulierung der Problemstellung in eigenen Worten, Klären von gegebenen und gesuchten Größen bzw. Leitfragen.
    - Tipp 2 (Strategie & Werkzeug): Denkanstoß zur geeigneten Formel, Regel oder Methode. Nutze LaTeX für mathematische Formeln ($...$ für inline oder $$...$$ für abgesetzte Formeln).
    - Tipp 3 (Strukturierung & erster Schritt): Vorschlag für den ersten Rechenschritt oder eine Skizze/Tabelle, ohne das Resultat zu berechnen.
    - Tipp 4 (Selbstkontrolle / Plausibilität, optional): Impuls zur Überprüfung des Vorgehens oder zur Einheitenkontrolle.
 3. Sprache: Deutsch, schülergerecht, ermutigend, klar formuliert.
 4. Formuliere kurze, prägnante Titel OHNE vorangestelltes 'Tipp 1:' (z. B. 'Problemstellung erfassen' statt 'Tipp 1: Problemstellung').
-5. Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
+
+DIDAKTISCHE MEDIEN-EINBETTUNG (OPTIONAL & GEZIELT):
+Du darfst bei bestimmten Tipps passende Medien einpflegen, wenn es an der jeweiligen Stelle didaktisch sinnvoll ist:
+- "image": Ein selbst erstelltes sauberes SVG-Diagramm oder Skizze als data:image/svg+xml;utf8,... (z. B. rechtwinkliges Dreieck, Koordinatensystem, Text-Strukturdiagramm).
+- "youtube": Ein didaktisch passendes YouTube-Video (z. B. https://www.youtube.com/watch?v=kY8c2_367gA).
+- "geogebra": Ein passendes interaktives GeoGebra-Modell (z. B. https://www.geogebra.org/m/k3mqfqea).
+- "h5p": Eine interaktive H5P-Selbsttest-Übung (z. B. https://h5p.org/h5p/embed/104101).
+- "audio": Eine vorbereitete Audio-Erklärung oder Sprachtipp (DataUrl oder URL).
+- "none": Standardwert für Tipps ohne zusätzliches Medium.
+
+Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
 [
   {
     "title": "[Prägnante Überschrift]",
-    "text": "[Hilfestellung mit Formeln in $...$]"
+    "text": "[Hilfestellung mit Formeln in $...$]",
+    "mediaType": "none" | "image" | "youtube" | "geogebra" | "h5p" | "audio",
+    "mediaData": "[Optional: SVG data:image/svg+xml,... oder URL falls mediaType != 'none']"
   }
 ]`;
 
@@ -133,12 +148,12 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
         const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (rawText) {
           return {
-            hints: parseHintsJson(rawText),
+            hints: parseHintsJson(rawText, taskContext, taskTitle),
             engineUsed: 'user_gemini',
           };
         }
       } else {
-        console.warn('User Gemini API call failed, trying server or free math fallback...');
+        console.warn('User Gemini API call failed, trying server or fallback...');
       }
     } catch (err) {
       console.warn('Error calling user Gemini API:', err);
@@ -161,16 +176,37 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
       const json = await serverRes.json();
       if (Array.isArray(json.hints) && json.hints.length > 0) {
         return {
-          hints: json.hints,
+          hints: json.hints.map((h: any, idx: number) => {
+            let mediaType =
+              h.mediaType &&
+              ['none', 'image', 'audio', 'youtube', 'geogebra', 'h5p'].includes(h.mediaType)
+                ? h.mediaType
+                : 'none';
+            let mediaData =
+              h.mediaData && typeof h.mediaData === 'string' ? h.mediaData.trim() : undefined;
+            if ((mediaType === 'none' || !mediaData) && (taskContext || taskTitle)) {
+              const autoMedia = findRelevantPedagogicalMedia(taskContext, taskTitle, idx);
+              if (autoMedia) {
+                mediaType = autoMedia.mediaType;
+                mediaData = autoMedia.mediaData;
+              }
+            }
+            return {
+              title: h.title,
+              text: h.text,
+              mediaType,
+              mediaData,
+            };
+          }),
           engineUsed: 'server_gemini',
         };
       }
     }
   } catch (e) {
-    // Continue to free math AI engine
+    // Continue to free pedagogical AI engine
   }
 
-  // 3. Standard Free AI Engine (Specialized for Math & STEM, zero configuration, zero cost!)
+  // 3. Standard Free AI Engine (Pedagogical Scaffolding Engine for all subjects)
   const freeHints = generateMathPedagogicalHints(taskContext, taskTitle);
   return {
     hints: freeHints,
@@ -178,7 +214,7 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
   };
 }
 
-function parseHintsJson(rawText: string): GeneratedHintItem[] {
+function parseHintsJson(rawText: string, taskContext = '', taskTitle = ''): GeneratedHintItem[] {
   let cleaned = rawText.trim();
   // Strip markdown codeblock if present
   if (cleaned.startsWith('```json')) {
@@ -189,15 +225,32 @@ function parseHintsJson(rawText: string): GeneratedHintItem[] {
 
   const parsed = JSON.parse(cleaned);
   if (Array.isArray(parsed)) {
+    const validMedia = ['none', 'image', 'audio', 'youtube', 'geogebra', 'h5p'];
     return parsed.map((item, idx) => {
       // Clean any accidental "Tipp 1:" prefix from titles so it's never duplicated
       const cleanTitle = (item.title || `Denkanstoß ${idx + 1}`)
         .replace(new RegExp(`^Tipp\\s*${idx + 1}[:.]?\\s*`, 'i'), '')
         .trim();
 
+      let mediaType =
+        item.mediaType && validMedia.includes(item.mediaType) ? item.mediaType : 'none';
+      let mediaData =
+        item.mediaData && typeof item.mediaData === 'string' ? item.mediaData.trim() : undefined;
+
+      // If AI didn't provide media, see if our didacticMediaFactory can suggest a meaningful medium
+      if ((mediaType === 'none' || !mediaData) && (taskContext || taskTitle)) {
+        const autoMedia = findRelevantPedagogicalMedia(taskContext, taskTitle, idx);
+        if (autoMedia) {
+          mediaType = autoMedia.mediaType;
+          mediaData = autoMedia.mediaData;
+        }
+      }
+
       return {
         title: cleanTitle || `Denkanstoß ${idx + 1}`,
         text: item.text || '',
+        mediaType,
+        mediaData: mediaType !== 'none' ? mediaData : undefined,
       };
     });
   }

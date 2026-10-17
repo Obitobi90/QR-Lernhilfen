@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Lernhilfe } from '../types';
-import { renderStyledQrCode, getQrDesignSettings } from '../utils/qrCodeTheme';
+import { renderStyledQrCode, getQrDesignSettings, saveQrDesignSettings, QrDesignSettings } from '../utils/qrCodeTheme';
+import {
+  shortenUrl,
+  getCachedShortUrl,
+  formatDisplayShortUrl,
+} from '../utils/urlShortener';
 import {
   X,
   Download,
@@ -12,6 +17,11 @@ import {
   Layers,
   Palette,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Link2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface QrCodeModalProps {
@@ -38,13 +48,41 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
 
   // Formulate student URL
   const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+  const [shortUrl, setShortUrl] = useState<string>(() => getCachedShortUrl(studentUrl) || '');
 
-  const drawQr = () => {
+  useEffect(() => {
+    let isCancelled = false;
+    shortenUrl(studentUrl).then((res) => {
+      if (!isCancelled && res) {
+        setShortUrl(res);
+      }
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [studentUrl]);
+
+  const [qrDesign, setQrDesign] = useState<QrDesignSettings>(() => getQrDesignSettings());
+
+  const drawQr = (overrideSettings?: QrDesignSettings) => {
     if (canvasRef.current) {
-      renderStyledQrCode(canvasRef.current, studentUrl, { size: 300 }).catch((error) => {
+      const activeSettings = overrideSettings || getQrDesignSettings();
+      renderStyledQrCode(canvasRef.current, studentUrl, { size: 300, customSettings: activeSettings }).catch((error) => {
         console.error('QR code generation error:', error);
       });
     }
+  };
+
+  const handleUpdateZoom = (newZoom: number) => {
+    const clamped = Math.min(2.5, Math.max(0.5, Math.round(newZoom * 100) / 100));
+    const current = getQrDesignSettings();
+    const updated: QrDesignSettings = {
+      ...current,
+      logoZoom: clamped,
+    };
+    setQrDesign(updated);
+    saveQrDesignSettings(updated);
+    drawQr(updated);
   };
 
   useEffect(() => {
@@ -52,7 +90,9 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
 
     // Listen for live QR design changes from options modal
     const handleDesignChange = () => {
-      drawQr();
+      const latest = getQrDesignSettings();
+      setQrDesign(latest);
+      drawQr(latest);
     };
 
     window.addEventListener('qr-design-changed', handleDesignChange);
@@ -140,7 +180,8 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
 
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px "JetBrains Mono", monospace';
-    ctx.fillText(studentUrl, width / 2, qrY + qrSize + 84);
+    const displayLink = shortUrl ? formatDisplayShortUrl(shortUrl) : studentUrl;
+    ctx.fillText(displayLink, width / 2, qrY + qrSize + 84);
 
     // Trigger download
     const link = document.createElement('a');
@@ -180,7 +221,7 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
   // Copy Direct Link
   const handleCopyLink = async () => {
     try {
-      await navigator.clipboard.writeText(studentUrl);
+      await navigator.clipboard.writeText(shortUrl || studentUrl);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     } catch (err) {
@@ -267,6 +308,82 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
                 className="rounded-lg shrink-0"
               />
             </div>
+
+            {/* Direct Sketch/Image Zoom Bar */}
+            {((qrDesign.centerLogoType === 'sketch_drawing' || qrDesign.centerLogoType === 'custom_image') && !!qrDesign.customLogoDataUrl) && (
+              <div className="w-full max-w-xs mt-2.5 p-2.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5 text-center shadow-2xs">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
+                    <ZoomIn className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Skizzen-Zoom im Zentrum:</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                      {Math.round((qrDesign.logoZoom || 1.0) * 100)}%
+                    </span>
+                    {(qrDesign.logoZoom || 1.0) !== 1.0 && (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateZoom(1.0)}
+                        title="Auf Standard 100% zurücksetzen"
+                        className="p-0.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateZoom((qrDesign.logoZoom || 1.0) - 0.1)}
+                    className="p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 text-xs shadow-2xs"
+                    title="Verkleinern"
+                  >
+                    <ZoomOut className="w-3 h-3" />
+                  </button>
+                  <input
+                    type="range"
+                    min="50"
+                    max="250"
+                    step="5"
+                    value={Math.round((qrDesign.logoZoom || 1.0) * 100)}
+                    onChange={(e) => handleUpdateZoom(Number(e.target.value) / 100)}
+                    className="flex-1 accent-indigo-600 cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateZoom((qrDesign.logoZoom || 1.0) + 0.1)}
+                    className="p-1 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 text-xs shadow-2xs"
+                    title="Vergrößern"
+                  >
+                    <ZoomIn className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                  <div className="flex gap-1">
+                    {[100, 130, 160, 200].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => handleUpdateZoom(pct / 100)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                          Math.round((qrDesign.logoZoom || 1.0) * 100) === pct
+                            ? 'bg-indigo-600 text-white font-bold'
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 border border-slate-200 dark:border-slate-700'
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[10px] text-slate-400">max 250%</span>
+                </div>
+              </div>
+            )}
+
             {onOpenSettings && (
               <button
                 type="button"
@@ -274,7 +391,7 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
                   onClose();
                   onOpenSettings();
                 }}
-                className="mt-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1.5 hover:underline"
+                className="mt-2 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1.5 hover:underline"
               >
                 <Palette className="w-3.5 h-3.5" />
                 <span>QR-Design &amp; Logo anpassen</span>
@@ -318,18 +435,43 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
           {/* Fully Visible Direct Alternative URL Link */}
           <div className="w-full p-3 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl text-left space-y-1.5">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-              <span>Alternativer Direkt-Link für Schüler:</span>
-              <span className="text-[10px] text-slate-400">anklicken oder kopieren</span>
+              <span className="flex items-center gap-1.5 font-bold">
+                <Link2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                <span>Gekürzte Direkt-URL für Schüler:</span>
+              </span>
+              <span className="text-[10px] text-slate-400">zum schnellen Eintippen</span>
             </div>
-            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+            <div className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg flex items-center justify-between gap-2">
               <a
-                href={studentUrl}
+                href={shortUrl || studentUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-indigo-600 dark:text-indigo-400 font-mono break-all hover:underline select-all leading-relaxed block"
+                className="text-xs text-indigo-600 dark:text-indigo-400 font-mono font-bold break-all hover:underline select-all leading-relaxed flex-1"
               >
-                {studentUrl}
+                {shortUrl ? formatDisplayShortUrl(shortUrl) : (
+                  <span className="flex items-center gap-1.5 text-slate-400 font-normal italic">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>URL wird gekürzt...</span>
+                  </span>
+                )}
               </a>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="px-2 py-1 text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 rounded-md transition-colors shrink-0 flex items-center gap-1"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    <span className="text-emerald-600">Kopiert</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Kopieren</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 

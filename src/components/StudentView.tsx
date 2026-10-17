@@ -23,7 +23,6 @@ import {
   QrCode,
   ThumbsUp,
   ThumbsDown,
-  FileSpreadsheet,
   MessageSquarePlus,
   Check,
 } from 'lucide-react';
@@ -258,30 +257,6 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
         {/* Task Header Box */}
         <header className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xs space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {item.group_name && (
-              <span className="px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-semibold border border-purple-200 dark:border-purple-800/80 flex items-center gap-1">
-                <FileSpreadsheet className="w-3 h-3 text-purple-500" />
-                <span>{item.group_name}</span>
-              </span>
-            )}
-            {item.subject && (
-              <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-semibold">
-                {item.subject}
-              </span>
-            )}
-            {item.grade_level && (
-              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold border border-slate-200 dark:border-slate-700">
-                {item.grade_level}
-              </span>
-            )}
-            <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-mono font-bold text-xs border border-indigo-200 dark:border-indigo-800 break-all select-all">
-              Code: {item.id}
-            </span>
-            <span>·</span>
-            <span>{item.hints.length} gestufte {item.hints.length === 1 ? 'Tippkarte' : 'Tippkarten'}</span>
-          </div>
-
           {/* Title: Completely readable at a glance without truncation */}
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 leading-snug break-words">
             {item.title}

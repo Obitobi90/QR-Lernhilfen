@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import katex from 'katex';
+import { Check, X, Plus } from 'lucide-react';
 
 interface MathFormulaHelperProps {
   onInsertFormula: (latexSnippet: string) => void;
@@ -31,6 +32,7 @@ const MATH_SHORTCUTS = [
 
 export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFormula, onClose }) => {
   const [currentLatex, setCurrentLatex] = useState<string>('\\frac{a}{b}');
+  const [insertedSuccess, setInsertedSuccess] = useState<boolean>(false);
   const mathfieldRef = useRef<HTMLDivElement>(null);
 
   // Initialize or mount MathLive if available
@@ -81,7 +83,11 @@ export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFo
     if (!currentLatex.trim()) return;
     const formatted = `$${currentLatex.trim()}$`;
     onInsertFormula(formatted);
-    if (onClose) onClose();
+    // Explicitly do NOT close the editor so the user can insert multiple formulas without the page jumping!
+    setInsertedSuccess(true);
+    setTimeout(() => {
+      setInsertedSuccess(false);
+    }, 2000);
   };
 
   // Preview KaTeX string
@@ -97,15 +103,26 @@ export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFo
 
   return (
     <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-md space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-800">
         <div>
-          <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+          <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <span>Visueller Formel-Editor &amp; LaTeX-Assistent</span>
           </h4>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Formel visuell bearbeiten oder Symbol-Buttons anklicken.
+            Formel bearbeiten und mit „Formel in Text einfügen“ übernehmen. Der Editor bleibt zum Weiterarbeiten geöffnet.
           </p>
         </div>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-2.5 py-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 rounded-lg hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 text-xs font-semibold"
+            title="Formel-Editor schließen"
+          >
+            <X className="w-4 h-4" />
+            <span>Schließen</span>
+          </button>
+        )}
       </div>
 
       {/* MathLive visual field mount point */}
@@ -178,23 +195,42 @@ export const MathFormulaHelper: React.FC<MathFormulaHelperProps> = ({ onInsertFo
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-200 dark:border-slate-800">
-        {onClose && (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+        <span className="text-[11px] text-slate-500 dark:text-slate-400 text-center sm:text-left">
+          💡 Tipp: Du kannst mehrere Formeln nacheinander einfügen.
+        </span>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors shadow-2xs"
+            >
+              Fertig / Schließen
+            </button>
+          )}
           <button
             type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-md transition-colors"
+            onClick={handleInsert}
+            className={`px-4 py-1.5 text-xs font-bold rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 ${
+              insertedSuccess
+                ? 'bg-emerald-600 text-white ring-2 ring-emerald-400'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white active:scale-98'
+            }`}
           >
-            Abbrechen
+            {insertedSuccess ? (
+              <>
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Formel eingefügt! ✓</span>
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                <span>Formel in Text einfügen</span>
+              </>
+            )}
           </button>
-        )}
-        <button
-          type="button"
-          onClick={handleInsert}
-          className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm transition-colors flex items-center gap-1.5"
-        >
-          <span>Formel in Text einfügen</span>
-        </button>
+        </div>
       </div>
     </div>
   );

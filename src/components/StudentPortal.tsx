@@ -415,10 +415,6 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                 </div>
               )}
 
-              <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
-                (Standard-PIN bei Ersteinrichtung: <code className="font-mono text-indigo-500 font-bold">1234</code>. Kann in den Einstellungen geändert werden.)
-              </p>
-
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"

@@ -1,12 +1,35 @@
 import { GeneratedHintItem } from './geminiGenerator';
+import { findRelevantPedagogicalMedia } from './didacticMediaFactory';
 
 /**
- * High-Quality Pedagogical Math & STEM Scaffolding Engine.
+ * High-Quality Pedagogical Scaffolding Engine for all school subjects.
  * Provides graduated (stepped) hints for classroom tasks without requiring an API key.
  * Strictly adheres to pedagogical scaffolding: NEVER reveals the final solution or result.
  * Supports German school curricula (Grades 5-13, Realschule, Gymnasium, Gesamtschule, Berufskolleg).
  */
 export function generateMathPedagogicalHints(
+  taskContext: string,
+  taskTitle: string
+): GeneratedHintItem[] {
+  const hints = generateRawPedagogicalHints(taskContext, taskTitle);
+  return hints.map((hint, idx) => {
+    if (hint.mediaType && hint.mediaType !== 'none') return hint;
+    const media = findRelevantPedagogicalMedia(taskContext, taskTitle, idx);
+    if (media) {
+      return {
+        ...hint,
+        mediaType: media.mediaType,
+        mediaData: media.mediaData,
+      };
+    }
+    return {
+      ...hint,
+      mediaType: 'none',
+    };
+  });
+}
+
+function generateRawPedagogicalHints(
   taskContext: string,
   taskTitle: string
 ): GeneratedHintItem[] {
@@ -320,23 +343,60 @@ export function generateMathPedagogicalHints(
     ];
   }
 
-  // 11. UNIVERSAL-DIDAKTISCHES SCAFFOLDING FÜR ALLE SCHULAUFGABEN
+  // 11. SPRACHEN, GEISTESWISSENSCHAFTEN & TEXTE (DEUTSCH, ENGLISCH, GESCHICHTE, SOWI, POLITIK)
+  if (
+    text.includes('text') ||
+    text.includes('autor') ||
+    text.includes('analyse') ||
+    text.includes('erörter') ||
+    text.includes('charakter') ||
+    text.includes('gedicht') ||
+    text.includes('szene') ||
+    text.includes('quelle') ||
+    text.includes('protagonist') ||
+    text.includes('sprache') ||
+    text.includes('argument') ||
+    text.includes('stellungnahme') ||
+    text.includes('reading') ||
+    text.includes('writing')
+  ) {
+    return [
+      {
+        title: 'Operatoren klären & Text genau erfassen',
+        text: 'Achte auf den genauen Arbeitsauftrag (Operator wie *Erläutere*, *Analysiere*, *Vergleiche* oder *Beurteile*).\n\nLies den Text bzw. die Aufgabenstellung aufmerksam: Markiere Kernaussagen, Schlüsselbegriffe und Signalwörter.',
+      },
+      {
+        title: 'Fachwissen & Kriterienstruktur aktivieren',
+        text: 'Welche Kriterien oder Leitfragen gehören zu dieser Aufgabenform?\n\n- Bei Analysen: Wer spricht? An wen richtet sich der Text? Was ist die zentrale Absicht?\n- Bei Erörterungen: Welche Pro- und Contra-Argumente lassen sich anführen?\n- Bei Quellen: Historischer Kontext, Adressat und Perspektive des Urhebers.',
+      },
+      {
+        title: 'Gliederung erstellen & Belege sichern',
+        text: 'Strukturiere deine Antwort, bevor du formulierst:\n\n1. Einleitung (Thema, Textsorte, Leitfrage)\n2. Hauptteil mit klaren Sinnabschnitten (Behauptung – Begründung – Beleg/Beispiel)\n3. Belege deine Aussagen mit konkreten Textstellen oder Zitaten.',
+      },
+      {
+        title: 'Schlussfolgerung & Kriterienprüfung (Selbstkontrolle)',
+        text: 'Lies deine Ausarbeitung noch einmal kritisch durch:\n\n- Hast du alle Teilfragen der Aufgabenstellung beantwortet?\n- Sind deine Argumente nachvollziehbar und schlüssig belegt?\n- Prüfe Rechtschreibung, Zeichensetzung und einen sachlichen Ausdruck.',
+      },
+    ];
+  }
+
+  // 12. UNIVERSAL-DIDAKTISCHES SCAFFOLDING FÜR ALLE WEITEREN FÄCHER & AUFGABEN
   return [
     {
-      title: 'Aufgabenstellung analysieren & Teilschritte erfassen',
-      text: `Lies die Aufgabe gründlich durch und strukturiere dein Vorgehen:\n\n1. **Was ist gegeben?** ${numbersDisplay ? `(Werte im Text: ${numbersDisplay})` : 'Markiere alle Zahlen und Einheiten.'}\n2. **Was ist gesucht?** Notiere die genaue Zielfrage.\n3. Fertige, wenn möglich, eine Skizze oder Tabelle an.`,
+      title: 'Aufgabenstellung analysieren & Operatoren erfassen',
+      text: 'Lies die Aufgabe gründlich durch und strukturiere dein Vorgehen:\n\n1. **Was ist die genaue Fragestellung?** Welcher Operator wird gefordert (*Beschreibe*, *Ermittle*, *Begründe*, *Entwirf*)?\n2. **Welche Informationen sind vorgegeben?**\n3. Notiere dir Stichpunkte oder eine erste Strukturierungsskizze.',
     },
     {
-      title: 'Strategie, mathematische Regeln & Formeln aktivieren',
-      text: `Überlege, welche Gesetzmäßigkeiten, Rechenregeln oder Formeln den Zusammenhang zwischen den gegebenen und gesuchten Größen herstellen.\n\nNotiere die allgemeine mathematische Formel zunächst mit Variablen (Buchstaben), noch ohne Zahlen einzusetzen.`,
+      title: 'Strategie, Fachbegriffe & Methoden aktivieren',
+      text: 'Überlege, welche Fachregeln, Modelle oder Vorgehensweisen zur Lösung führen.\n\nRufe dir das relevante Fachwissen ins Gedächtnis und wähle die passende Methode für diesen Aufgabentyp.',
     },
     {
-      title: 'Werte einsetzen & ersten Rechenschritt ausführen',
-      text: `Setze deine bekannten Größen in die Formel ein.\n\nForme die Gleichung Schritt für Schritt äquivalent um, um die gesuchte Variable freizustellen. Berechne Zwischenschritte sorgfältig und achte auf Punkt-vor-Strich sowie Vorzeichen.`,
+      title: 'Strukturierte Umsetzung & erster Arbeitsschritt',
+      text: 'Starte mit dem ersten Teilschritt deiner Ausarbeitung.\n\nGehe schrittweise vor: Zerlege komplexe Aufgaben in handhabbare Teilabschnitte und begründe deine Zwischenschritte nachvollziehbar.',
     },
     {
-      title: 'Antwortsatz & Plausibilitäts-Check',
-      text: `Überprüfe dein Ergebnis:\n- Beantwortet deine Zahl die ursprüngliche Fragestellung sinnvoll?\n- Hast du die richtige Maßeinheit angegeben?\n- Formuliere einen kurzen, vollständigen Antwortsatz.`,
+      title: 'Ergebnissicherung & Plausibilitäts-Check',
+      text: 'Überprüfe dein Ergebnis:\n\n- Beantwortet deine Ausarbeitung die ursprüngliche Fragestellung vollständig?\n- Erscheint das Ergebnis sachlogisch und schlüssig?\n- Formuliere ein klares Fazit oder einen vollständigen Antwortsatz.',
     },
   ];
 }

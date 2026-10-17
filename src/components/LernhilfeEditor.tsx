@@ -34,6 +34,7 @@ import {
   RefreshCw,
   FileSpreadsheet,
   FolderPlus,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface LernhilfeEditorProps {
@@ -107,6 +108,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
   const [previewTab, setPreviewTab] = useState<'editor' | 'preview'>('editor');
+  const [showOverwriteConfirm, setShowOverwriteConfirm] = useState<boolean>(false);
 
   // AI Task & Math Text Extraction state
   const [isExtractingText, setIsExtractingText] = useState<boolean>(false);
@@ -264,19 +266,74 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     }
   };
 
-  // AI Generator trigger
-  const handleGenerateAiHints = async () => {
+  // AI Generator trigger with overwrite confirmation
+  const handleTriggerAiGeneration = () => {
+    // Check if user already has non-empty or customized hints
+    const hasExistingContent =
+      hints.length > 0 &&
+      hints.some(
+        (h) =>
+          h.text.trim().length > 0 ||
+          (h.title &&
+            h.title !== 'Tipp 1' &&
+            h.title !== 'Problemstellung erfassen & Skizze anfertigen')
+      );
+
+    if (hasExistingContent) {
+      setShowOverwriteConfirm(true);
+    } else {
+      executeGenerateAiHints();
+    }
+  };
+
+  const executeGenerateAiHints = async () => {
+    setShowOverwriteConfirm(false);
+
     let effectiveContext = taskContext.trim();
     let effectiveTitle = title.trim();
 
-    // If teacher hasn't typed anything yet, provide a friendly default math task so they see it work instantly!
+    // If teacher hasn't typed anything yet, provide a friendly default task based on selected subject
     if (!effectiveContext && !effectiveTitle && !taskImage) {
-      effectiveTitle = 'Satz des Pythagoras: Hypotenuse berechnen';
-      effectiveContext = 'Eine 5 m lange Feuerwehrleiter wird an einer Wand aufgestellt. Der Fußpunkt ist 3 m von der Hauswand entfernt. In welcher Höhe berührt die Leiter die Wand?';
+      if (subject === 'Deutsch') {
+        effectiveTitle = 'Textanalyse & Argumentation';
+        effectiveContext =
+          'Analysiere den vorliegenden Textauszug und arbeite die zentrale These und Begründungsstruktur heraus.';
+      } else if (subject === 'Englisch') {
+        effectiveTitle = 'Reading Comprehension & Analysis';
+        effectiveContext =
+          'Explain the character’s motivation and analyze their behavior in the given excerpt.';
+      } else if (subject === 'Biologie') {
+        effectiveTitle = 'Zellbiologie & Fotosynthese';
+        effectiveContext =
+          'Beschreibe die lichtabhängigen und lichtunabhängigen Reaktionen der Fotosynthese in den Chloroplasten.';
+      } else if (subject === 'Physik') {
+        effectiveTitle = 'Gleichförmig beschleunigte Bewegung';
+        effectiveContext =
+          'Ein Fahrzeug bremst mit konstanter Verzögerung. Berechne Bremszeit und Anhalteweg aus 50 km/h.';
+      } else if (subject === 'Chemie') {
+        effectiveTitle = 'Stöchiometrische Reaktionsberechnung';
+        effectiveContext =
+          'Gleiche die Verbrennungsgleichung aus und berechne die Stoffmenge des entstehenden Gases.';
+      } else if (
+        subject === 'Geschichte' ||
+        subject === 'Wirtschaft-Politik' ||
+        subject === 'Sozialwissenschaften'
+      ) {
+        effectiveTitle = 'Historische Quellenanalyse & Urteilsbildung';
+        effectiveContext =
+          'Arbeite aus der Quelle die Position des Verfassers heraus und beurteile die Argumentation historisch.';
+      } else if (subject === 'Mathematik') {
+        effectiveTitle = 'Satz des Pythagoras: Hypotenuse berechnen';
+        effectiveContext =
+          'Eine 5 m lange Feuerwehrleiter wird an einer Wand aufgestellt. Der Fußpunkt ist 3 m von der Hauswand entfernt. In welcher Höhe berührt die Leiter die Wand?';
+      } else {
+        effectiveTitle = 'Problemstellung & Lösungsstrategie';
+        effectiveContext =
+          'Erarbeite schrittweise eine begründete und strukturierte Lösung zur Aufgabenstellung.';
+      }
       setTitle(effectiveTitle);
       setTaskContext(effectiveContext);
     } else if (!effectiveContext && effectiveTitle) {
-      // Use title as context if context is empty
       effectiveContext = `Aufgabe zum Thema: ${effectiveTitle}`;
     }
 
@@ -284,30 +341,44 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     setAiError(null);
 
     try {
-      const result = await generateSteppedHintsWithAI(effectiveContext, effectiveTitle || 'Aufgabe', taskImage);
+      const result = await generateSteppedHintsWithAI(
+        effectiveContext,
+        effectiveTitle || 'Aufgabe',
+        taskImage
+      );
 
-      // Convert generated hints to Hint items
+      // Convert generated hints to Hint items with optional media
       const newHints: Hint[] = result.hints.map((gh, idx) => ({
         id: 'hint-ai-' + Date.now() + '-' + idx,
         title: gh.title,
         text: gh.text,
-        mediaType: 'none',
+        mediaType:
+          gh.mediaType && ['image', 'audio', 'youtube', 'geogebra', 'h5p'].includes(gh.mediaType)
+            ? gh.mediaType
+            : 'none',
+        mediaData: gh.mediaData || undefined,
       }));
 
-      // If user had existing empty hint, replace it; otherwise append new hints
-      if (hints.length === 1 && !hints[0].text.trim()) {
-        setHints(newHints);
-      } else {
-        setHints([...hints, ...newHints]);
-      }
+      // Strictly overwrite all previous hint cards with the new ones
+      setHints(newHints);
+
+      const mediaCount = newHints.filter((h) => h.mediaType && h.mediaType !== 'none').length;
+      const mediaNote =
+        mediaCount > 0
+          ? ` (inkl. ${mediaCount} passendem didaktischen Medium)`
+          : '';
 
       if (result.engineUsed === 'user_gemini') {
-        setAiSuccessMessage('Gestufte Tipps mit deinem Google Gemini API-Key generiert!');
+        setAiSuccessMessage(
+          `✨ ${newHints.length} gestufte Tipps mit Google Gemini generiert${mediaNote}!`
+        );
       } else if (result.engineUsed === 'server_gemini') {
-        setAiSuccessMessage('Gestufte Tipps mit Gemini generiert!');
+        setAiSuccessMessage(
+          `✨ ${newHints.length} gestufte Tipps mit Gemini generiert${mediaNote}!`
+        );
       } else {
         setAiSuccessMessage(
-          '✨ Gestufte Tipps erfolgreich mit kostenloser didaktischer Mathe-KI generiert!'
+          `✨ ${newHints.length} gestufte Tipps erfolgreich mit didaktischer KI generiert${mediaNote}!`
         );
       }
       setTimeout(() => setAiSuccessMessage(null), 6000);
@@ -661,17 +732,24 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsTaskMathHelperOpen(!isTaskMathHelperOpen)}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 font-semibold p-1"
+                  className={`text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                    isTaskMathHelperOpen
+                      ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                      : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                  }`}
+                  title={isTaskMathHelperOpen ? 'Formel-Editor schließen' : 'Formel-Editor öffnen'}
                 >
                   <Calculator className="w-3.5 h-3.5" />
-                  <span>Formel einfügen</span>
+                  <span>{isTaskMathHelperOpen ? 'Formel-Editor schließen' : 'Formel einfügen'}</span>
                 </button>
               </div>
             </div>
 
             {isTaskMathHelperOpen && (
               <MathFormulaHelper
-                onInsertFormula={(snippet) => setTaskContext((prev) => prev + ' ' + snippet)}
+                onInsertFormula={(snippet) =>
+                  setTaskContext((prev) => (prev ? prev + ' ' + snippet : snippet))
+                }
                 onClose={() => setIsTaskMathHelperOpen(false)}
               />
             )}
@@ -855,7 +933,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <button
                   type="button"
                   disabled={isGeneratingAi}
-                  onClick={handleGenerateAiHints}
+                  onClick={handleTriggerAiGeneration}
                   className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 transition-all"
                 >
                   {isGeneratingAi ? (
@@ -870,10 +948,6 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     </>
                   )}
                 </button>
-                <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/80">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                  <span>Kostenlose didaktische Mathe-KI (sofort aktiv ohne Key)</span>
-                </div>
               </div>
               <button
                 type="button"
@@ -987,7 +1061,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     <MathFormulaHelper
                       onInsertFormula={(snippet) =>
                         handleUpdateHint(index, {
-                          text: (hint.text || '') + ' ' + snippet,
+                          text: hint.text ? hint.text + ' ' + snippet : snippet,
                         })
                       }
                       onClose={() => setActiveMathHelperHintIndex(null)}
@@ -1007,10 +1081,23 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                             activeMathHelperHintIndex === index ? null : index
                           )
                         }
-                        className="text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 flex items-center gap-1 font-semibold p-1"
+                        className={`text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                          activeMathHelperHintIndex === index
+                            ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                            : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                        }`}
+                        title={
+                          activeMathHelperHintIndex === index
+                            ? 'Formel-Assistent schließen'
+                            : 'Formel-Assistent öffnen'
+                        }
                       >
                         <Calculator className="w-3.5 h-3.5" />
-                        <span>Formel-Assistent</span>
+                        <span>
+                          {activeMathHelperHintIndex === index
+                            ? 'Formel-Assistent schließen'
+                            : 'Formel-Assistent'}
+                        </span>
                       </button>
                     </div>
 
@@ -1066,7 +1153,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                           const val = e.target.value.replace(/\D/g, '').slice(0, 4);
                           handleUpdateHint(index, { pin: val });
                         }}
-                        placeholder="z.B. 1234 oder leer lassen"
+                        placeholder="z.B. 4112 oder leer lassen"
                         className="w-full px-3.5 py-2.5 text-base sm:text-sm font-mono bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                       />
                       <p className="text-[10px] text-slate-400">
@@ -1247,6 +1334,49 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               <Save className="w-4 h-4" />
               <span>Lernhilfe speichern</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Warning Confirmation Modal: Overwrite Existing Hints with AI */}
+      {showOverwriteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
+                  Bestehende Tipps überschreiben?
+                </h3>
+                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium block">
+                  Achtung: Vorhandene Inhalte werden ersetzt
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Es sind bereits <strong>{hints.length} Tippkarte(n)</strong> für diese Lernhilfe vorhanden. Wenn du fortfährst, werden alle bisherigen Tipps gelöscht und durch die neu generierten didaktischen KI-Tipps vollständig überschrieben.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowOverwriteConfirm(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-xl transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={executeGenerateAiHints}
+                className="px-4 py-2 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Ja, alle Tipps überschreiben</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

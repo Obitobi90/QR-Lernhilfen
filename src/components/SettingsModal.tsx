@@ -65,7 +65,11 @@ import {
   Pipette,
   RefreshCw,
   Layers,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from 'lucide-react';
+
 
 
 interface SettingsModalProps {
@@ -82,10 +86,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
   const [qrSaved, setQrSaved] = useState<boolean>(false);
   const [qrUploading, setQrUploading] = useState<boolean>(false);
   const qrPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const bottomQrPreviewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleBottomCanvasRef = (el: HTMLCanvasElement | null) => {
+    bottomQrPreviewCanvasRef.current = el;
+    if (el && activeTab === 'qr') {
+      const demoText = `${window.location.origin}${window.location.pathname}?id=beispiel-tipp`;
+      renderStyledQrCode(el, demoText, {
+        size: 220,
+        customSettings: qrSettings,
+      }).catch((e) => console.error('Bottom Preview QR error:', e));
+    }
+  };
 
   // Teacher PIN Security state
-  const [teacherPin, setTeacherPinState] = useState<string>('1234');
+  const [teacherPin, setTeacherPinState] = useState<string>(() => getTeacherPin());
   const [showPin, setShowPin] = useState<boolean>(false);
+
   const [pinSaved, setPinSaved] = useState<boolean>(false);
 
   // Biometrics & Passkey State
@@ -131,7 +148,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
     const sb = getSupabaseSettings();
     setSupabaseUrl(sb.url || '');
     setSupabaseAnonKey(sb.anonKey || '');
-    setSupabaseEnabled(sb.enabled || false);
+    setSupabaseEnabled(sb.enabled !== false);
+
 
     // Check auth status if Supabase client is available
     const client = getSupabaseClient();
@@ -146,12 +164,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
 
   // Live render QR Preview on canvas whenever qrSettings change
   useEffect(() => {
-    if (qrPreviewCanvasRef.current && activeTab === 'qr') {
+    if (activeTab === 'qr') {
       const demoText = `${window.location.origin}${window.location.pathname}?id=beispiel-tipp`;
-      renderStyledQrCode(qrPreviewCanvasRef.current, demoText, {
-        size: 260,
-        customSettings: qrSettings,
-      }).catch((e) => console.error('Preview QR error:', e));
+      if (qrPreviewCanvasRef.current) {
+        renderStyledQrCode(qrPreviewCanvasRef.current, demoText, {
+          size: 260,
+          customSettings: qrSettings,
+        }).catch((e) => console.error('Preview QR error:', e));
+      }
+      if (bottomQrPreviewCanvasRef.current) {
+        renderStyledQrCode(bottomQrPreviewCanvasRef.current, demoText, {
+          size: 220,
+          customSettings: qrSettings,
+        }).catch((e) => console.error('Bottom Preview QR error:', e));
+      }
     }
   }, [qrSettings, activeTab]);
 
@@ -412,7 +438,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
         });
         if (error) throw error;
         setCurrentUserEmail(data.user?.email || null);
-        setAuthMessage('Erfolgreich angemeldet!');
+        setTeacherSessionActive(true);
+        setAuthMessage('Erfolgreich angemeldet! Du bleibst dauerhaft eingeloggt.');
+        onSettingsUpdated();
       } else {
         const { data, error } = await client.auth.signUp({
           email: authEmail,
@@ -435,9 +463,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
     if (client) {
       await client.auth.signOut();
       setCurrentUserEmail(null);
+      setTeacherSessionActive(false);
       setAuthMessage('Erfolgreich abgemeldet.');
+      onSettingsUpdated();
     }
   };
+
 
   const sqlSchemaSnippet = `-- Tabelle in der Supabase SQL Console anlegen:
 CREATE TABLE IF NOT EXISTS public.lernhilfen (
@@ -896,15 +927,25 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                 {qrSettings.rawUploadedImage && (
                   <div className="p-3.5 bg-white dark:bg-slate-900 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl space-y-3.5">
                     <div className="flex items-center gap-4">
-                      {/* Converted Sketch Thumbnail */}
+                      {/* Converted Sketch Thumbnail / Live Badge Preview */}
                       <div className="relative shrink-0">
-                        <img
-                          src={qrSettings.customLogoDataUrl || qrSettings.rawUploadedImage}
-                          alt="Skizze"
-                          className={`w-14 h-14 object-contain bg-white p-1 border-2 border-indigo-500 shadow-xs ${
+                        <div
+                          className={`w-16 h-16 bg-white p-1 border-2 border-indigo-500 shadow-xs flex items-center justify-center overflow-hidden transition-all ${
                             qrSettings.badgeShape === 'circle' ? 'rounded-full' : 'rounded-xl'
                           }`}
-                        />
+                          title={`Aktuelle Skizze im Badge (Zoom: ${Math.round((qrSettings.logoZoom || 1.0) * 100)}%)`}
+                        >
+                          <img
+                            src={qrSettings.customLogoDataUrl || qrSettings.rawUploadedImage}
+                            alt="Skizze"
+                            style={{
+                              transform: `scale(${qrSettings.logoZoom || 1.0})`,
+                              transformOrigin: 'center center',
+                              objectFit: qrSettings.logoFit === 'cover' ? 'cover' : 'contain',
+                            }}
+                            className="w-full h-full transition-transform"
+                          />
+                        </div>
                         {qrUploading && (
                           <div className="absolute inset-0 bg-white/70 dark:bg-slate-900/70 rounded-full flex items-center justify-center">
                             <RefreshCw className="w-4 h-4 animate-spin text-indigo-600" />
@@ -913,16 +954,19 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
                             Aktive Skizzen-Strichzeichnung
                           </span>
                           <span className="text-[10px] font-semibold px-2 py-0.2 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-md">
                             Gestochen scharf
                           </span>
+                          <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                            Zoom: {Math.round((qrSettings.logoZoom || 1.0) * 100)}%
+                          </span>
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Das Foto wurde in saubere Konturlinien umgewandelt. Du kannst den Stil und die Strichfarbe hier feineinstellen:
+                          Das Foto wurde in saubere Konturlinien umgewandelt. Du kannst den Stil, die Strichfarbe und den Zoom direkt hier unten einstellen:
                         </p>
                       </div>
                     </div>
@@ -991,9 +1035,131 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                       </div>
                     </div>
 
+                    {/* Image Zoom Slider with Integrated Live QR Preview */}
+                    <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <ZoomIn className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span className="font-bold text-slate-800 dark:text-slate-200">
+                            Bild-Zoom / Größe im QR-Code Zentrum:
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold text-xs bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                            {Math.round((qrSettings.logoZoom || 1.0) * 100)}%
+                          </span>
+                          {(qrSettings.logoZoom || 1.0) !== 1.0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQrSettings((prev) => ({ ...prev, logoZoom: 1.0 }))
+                              }
+                              className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold flex items-center gap-1"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Standard (100%)</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Live Preview Container: Zero scrolling required! */}
+                      <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-4">
+                        {/* Live QR Canvas down here */}
+                        <div className="flex flex-col items-center gap-1.5 shrink-0">
+                          <div className="p-2 bg-white rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs flex items-center justify-center">
+                            <canvas
+                              ref={handleBottomCanvasRef}
+                              width={220}
+                              height={220}
+                              style={{ width: '130px', height: '130px', aspectRatio: '1 / 1', display: 'block' }}
+                              className="rounded-lg shrink-0"
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                            Live-Vorschau (Echtzeit)
+                          </span>
+                        </div>
+
+                        {/* Zoom Controls right next to the preview */}
+                        <div className="flex-1 min-w-0 space-y-2.5 w-full">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQrSettings((prev) => ({
+                                  ...prev,
+                                  logoZoom: Math.max(0.5, Math.round(((prev.logoZoom || 1.0) - 0.05) * 100) / 100),
+                                }))
+                              }
+                              title="Verkleinern (-5%)"
+                              className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-2xs transition-colors"
+                            >
+                              <ZoomOut className="w-4 h-4" />
+                            </button>
+                            <input
+                              type="range"
+                              min="50"
+                              max="250"
+                              step="5"
+                              value={Math.round((qrSettings.logoZoom || 1.0) * 100)}
+                              onChange={(e) =>
+                                setQrSettings((prev) => ({
+                                  ...prev,
+                                  logoZoom: Number(e.target.value) / 100,
+                                }))
+                              }
+                              className="flex-1 accent-indigo-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setQrSettings((prev) => ({
+                                  ...prev,
+                                  logoZoom: Math.min(2.5, Math.round(((prev.logoZoom || 1.0) + 0.05) * 100) / 100),
+                                }))
+                              }
+                              title="Vergrößern (+5%)"
+                              className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-2xs transition-colors"
+                            >
+                              <ZoomIn className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>50%</span>
+                            <div className="flex flex-wrap gap-1">
+                              {[100, 125, 150, 180, 220, 250].map((pct) => (
+                                <button
+                                  key={pct}
+                                  type="button"
+                                  onClick={() =>
+                                    setQrSettings((prev) => ({ ...prev, logoZoom: pct / 100 }))
+                                  }
+                                  className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                                    Math.round((qrSettings.logoZoom || 1.0) * 100) === pct
+                                      ? 'bg-indigo-600 text-white shadow-2xs'
+                                      : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {pct}%
+                                </button>
+                              ))}
+                            </div>
+                            <span>250%</span>
+                          </div>
+
+                          <p className="text-[10px] text-indigo-600 dark:text-indigo-400 leading-snug">
+                            💡 Tipp: Schmale oder längliche Skizzen bei 140% – 200% vergrößern. Du siehst die genaue Einpassung sofort links in der Live-Vorschau – ohne hochscrollen zu müssen!
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Sketch Stroke Color Setting */}
                     <div className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
                       <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+
                         Farbanpassung der Skizzen-Linien:
                       </label>
                       <div className="flex flex-wrap items-center gap-3">
@@ -1176,8 +1342,9 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                         type={showPin ? 'text' : 'password'}
                         value={teacherPin}
                         onChange={(e) => setTeacherPinState(e.target.value)}
-                        placeholder="1234"
+                        placeholder="4112023"
                         className="w-full pl-3.5 pr-9 py-2 text-xs font-mono tracking-wider bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+
                       />
                       <button
                         type="button"
@@ -1305,14 +1472,14 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
           {/* TAB 3: CLOUD & KI */}
           {activeTab === 'cloud' && (
             <div className="space-y-6">
-              {/* Default Free Math AI Notice */}
+              {/* Default Free AI Notice */}
               <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-1.5">
                 <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-sm">
                   <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Kostenlose didaktische MINT- &amp; Mathe-KI ist standardmäßig aktiv</span>
+                  <span>Kostenlose didaktische KI für alle Schulfächer ist standardmäßig aktiv</span>
                 </div>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                  Die Web-App generiert didaktisch gestufte Hilfen für Mathematik und Naturwissenschaften <strong>sofort und völlig kostenlos ohne API-Key</strong>. Du musst keinen Key eintragen, um die KI-Tippkarten zu nutzen!
+                  Die Web-App generiert didaktisch gestufte Hilfen für alle Fächer <strong>sofort und völlig kostenlos ohne API-Key</strong>. Du musst keinen Key eintragen, um die KI-Tippkarten zu nutzen!
                 </p>
               </div>
 
@@ -1325,7 +1492,7 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                   </h4>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Falls du erweiterte LLMs (z. B. Gemini 2.5 Pro für anspruchsvolle Oberstufen-Mathematik) oder automatische Bilderkennung nutzen möchtest, kannst du hier deinen eigenen Schlüssel eintragen.
+                  Falls du erweiterte LLMs (z. B. Gemini 2.5 Pro für anspruchsvolle Aufgaben aller Fächer) oder automatische Bilderkennung nutzen möchtest, kannst du hier deinen eigenen Schlüssel eintragen.
                 </p>
 
                 <form onSubmit={handleSaveGemini} className="space-y-3">
@@ -1398,8 +1565,9 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                 </div>
 
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Solange nicht konfiguriert oder deaktiviert, nutzt die App automatisch den lokalen Demo-Modus im Browser.
+                  Der Cloud-Modus ist standardmäßig aktiv mit deinem hinterlegten Projekt (<code className="font-mono text-emerald-600 font-bold">https://jctpkdffnttvyvimlrdw.supabase.co</code>). Alle Lernhilfen und Tippkarten werden dauerhaft in deiner Cloud-Datenbank gespeichert.
                 </p>
+
 
                 <form onSubmit={handleTestAndSaveSupabase} className="space-y-3">
                   <div className="space-y-1">
