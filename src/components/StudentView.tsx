@@ -179,21 +179,6 @@ export const StudentView: React.FC<StudentViewProps> = ({
     }
   };
 
-  const handleExpandAll = () => {
-    const allRevealed: Record<string, boolean> = {};
-    item.hints.slice(0, unlockedCount).forEach((h) => {
-      allRevealed[h.id] = true;
-      if (!isTeacherPreview) {
-        recordHintView(item.id, h.id);
-      }
-    });
-    setOpenHints(allRevealed);
-  };
-
-  const handleCollapseAll = () => {
-    setOpenHints({});
-  };
-
   const toggleLayoutMode = () => {
     const next = desktopLayout === 'split' ? 'single' : 'split';
     setDesktopLayout(next);
@@ -377,31 +362,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
                     ) : isOpen ? (
                       <span className="text-emerald-600 dark:text-emerald-400 font-bold">Offen</span>
                     ) : (
-                      <span className="text-indigo-600 dark:text-indigo-400">Eingeklappt</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                     )}
                   </span>
                 </button>
               );
             })}
           </div>
-        </div>
-
-        {/* Global Expand / Collapse All Quick Action */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleExpandAll}
-            className="flex-1 py-1.5 px-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-center"
-          >
-            Alle aufklappen
-          </button>
-          <button
-            type="button"
-            onClick={handleCollapseAll}
-            className="flex-1 py-1.5 px-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors text-center"
-          >
-            Alle einklappen
-          </button>
         </div>
       </div>
     );
@@ -410,25 +377,15 @@ export const StudentView: React.FC<StudentViewProps> = ({
   // Stepped Hints Component
   const renderHintsStream = () => (
     <div className="space-y-4">
-      {/* Subheader with counter and quick buttons */}
+      {/* Subheader with counter */}
       <div className="flex items-center justify-between px-1">
         <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
           <HelpCircle className="w-3.5 h-3.5 text-indigo-500" />
           <span>Gestufte Hilfen &amp; Denkanstöße</span>
         </h2>
-        <div className="flex items-center gap-2">
-          {/* Quick toggle on mobile/tablet */}
-          <button
-            type="button"
-            onClick={Object.values(openHints).some(Boolean) ? handleCollapseAll : handleExpandAll}
-            className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold"
-          >
-            {Object.values(openHints).some(Boolean) ? 'Alle einklappen' : 'Alle aufklappen'}
-          </button>
-          <span className="text-xs text-slate-400 tabular-nums">
-            {Math.min(unlockedCount, item.hints.length)} von {item.hints.length}
-          </span>
-        </div>
+        <span className="text-xs text-slate-400 tabular-nums">
+          {Math.min(unlockedCount, item.hints.length)} von {item.hints.length} sichtbar
+        </span>
       </div>
 
       {item.hints.slice(0, unlockedCount).map((hint, index) => {
@@ -488,17 +445,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                   </span>
                 )}
 
-                {!isOpen ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1.5 rounded-xl border border-indigo-200/80 dark:border-indigo-800/80 transition-all hover:bg-indigo-100 dark:hover:bg-indigo-900/60 active:scale-95 shadow-2xs">
-                    <span>Ausklappen</span>
-                    <ChevronDown className="w-4 h-4 text-indigo-500" />
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 transition-colors">
-                    <span>Einklappen</span>
-                    <ChevronUp className="w-4 h-4" />
-                  </span>
-                )}
+                {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
               </div>
             </button>
 
