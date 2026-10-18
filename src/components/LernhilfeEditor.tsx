@@ -42,6 +42,9 @@ import {
   FolderPlus,
   AlertTriangle,
   ExternalLink,
+  Sliders,
+  Minus,
+  ChevronsUpDown,
 } from 'lucide-react';
 
 interface LernhilfeEditorProps {
@@ -248,6 +251,48 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     const updated = [...hints];
     updated[index] = { ...updated[index], ...fields };
     setHints(updated);
+  };
+
+  // Adjust GeoGebra height / vertical cropping to trim white space
+  const handleGeoGebraHeightChange = (index: number, newHeight: number) => {
+    const currentMediaData = hints[index]?.mediaData;
+    if (!currentMediaData) return;
+    const currentDims = getGeoGebraDimensions(currentMediaData);
+    const clampedHeight = Math.max(220, Math.min(1000, Math.round(newHeight)));
+    const updated = parseGeoGebraUrl(currentMediaData, currentDims.width, clampedHeight);
+    if (updated) {
+      handleUpdateHint(index, { mediaData: updated });
+    }
+  };
+
+  // Interactive drag-handle for GeoGebra preview to trim white space directly
+  const handlePreviewPointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    index: number
+  ) => {
+    e.preventDefault();
+    const currentMediaData = hints[index]?.mediaData;
+    if (!currentMediaData) return;
+    const currentDims = getGeoGebraDimensions(currentMediaData);
+    const startY = e.clientY;
+    const startHeight = currentDims.height;
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const deltaY = ev.clientY - startY;
+      const nextH = Math.max(220, Math.min(1000, Math.round((startHeight + deltaY * 1.6) / 10) * 10));
+      const updated = parseGeoGebraUrl(currentMediaData, currentDims.width, nextH);
+      if (updated) {
+        handleUpdateHint(index, { mediaData: updated });
+      }
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   };
 
   // Handle hint image upload with Canvas compression
@@ -1400,88 +1445,176 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                         )}
                       </div>
 
-                      {/* Format / Width Optimization Presets & Live Preview */}
-                      {hint.mediaData && (
-                        <div className="p-2.5 bg-slate-100/80 dark:bg-slate-800/60 rounded-xl space-y-2 border border-slate-200/80 dark:border-slate-700/80">
-                          <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              Breite / Format optimieren:
-                            </span>
-                            <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px]">
-                              {getGeoGebraDimensions(hint.mediaData).width} × {getGeoGebraDimensions(hint.mediaData).height} px
-                            </span>
-                          </div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
-                            {[
-                              { label: 'Breitbild (16:10)', w: 960, h: 600, desc: 'Empfohlen' },
-                              { label: 'Klassisch (4:3)', w: 800, h: 600, desc: 'Standard' },
-                              { label: 'Extra Breit (16:9)', w: 1100, h: 620, desc: 'Für weite Modelle' },
-                              { label: 'Kompakt', w: 720, h: 540, desc: 'Mobil' },
-                            ].map((preset) => {
-                              const currentDims = getGeoGebraDimensions(hint.mediaData!);
-                              const isSelected =
-                                currentDims.width === preset.w && currentDims.height === preset.h;
-                              return (
-                                <button
-                                  key={preset.label}
-                                  type="button"
-                                  onClick={() => {
-                                    const updated = parseGeoGebraUrl(hint.mediaData!, preset.w, preset.h);
-                                    if (updated) handleUpdateHint(index, { mediaData: updated });
-                                  }}
-                                  className={`px-2 py-1.5 rounded-lg border text-left transition-all ${
-                                    isSelected
-                                      ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-400 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 font-bold ring-1 ring-indigo-400'
-                                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                  }`}
-                                >
-                                  <div className="text-[11px] leading-tight">{preset.label}</div>
-                                  <div className="text-[10px] text-slate-400">{preset.w}×{preset.h}</div>
-                                </button>
-                              );
-                            })}
-                          </div>
+                      {/* Format / Width & Height Optimization Presets & Live Preview */}
+                      {hint.mediaData && (() => {
+                        const currentDims = getGeoGebraDimensions(hint.mediaData);
+                        return (
+                          <div className="p-3 bg-slate-100/80 dark:bg-slate-800/60 rounded-xl space-y-3 border border-slate-200/80 dark:border-slate-700/80">
+                            {/* 1. Width Presets */}
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  1. Breite &amp; Seitenverhältnis:
+                                </span>
+                                <span className="text-slate-500 dark:text-slate-400 font-mono text-[10px]">
+                                  {currentDims.width} × {currentDims.height} px
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
+                                {[
+                                  { label: 'Breitbild (16:10)', w: 960, h: currentDims.height, desc: 'Empfohlen' },
+                                  { label: 'Klassisch (4:3)', w: 800, h: currentDims.height, desc: 'Standard' },
+                                  { label: 'Extra Breit (16:9)', w: 1100, h: currentDims.height, desc: 'Für weite Modelle' },
+                                  { label: 'Kompakt', w: 720, h: currentDims.height, desc: 'Mobil' },
+                                ].map((preset) => {
+                                  const isSelected = currentDims.width === preset.w;
+                                  return (
+                                    <button
+                                      key={preset.label}
+                                      type="button"
+                                      onClick={() => {
+                                        const updated = parseGeoGebraUrl(hint.mediaData!, preset.w, currentDims.height);
+                                        if (updated) handleUpdateHint(index, { mediaData: updated });
+                                      }}
+                                      className={`px-2 py-1.5 rounded-lg border text-left transition-all ${
+                                        isSelected
+                                          ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-400 dark:border-indigo-600 text-indigo-700 dark:text-indigo-300 font-bold ring-1 ring-indigo-400'
+                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                      }`}
+                                    >
+                                      <div className="text-[11px] leading-tight">{preset.label}</div>
+                                      <div className="text-[10px] text-slate-400">{preset.w} px breit</div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
 
-                          {/* Live Preview within the Editor */}
-                          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                <span>Live-Vorschau (Ansicht für Schüler)</span>
-                              </span>
-                              <a
-                                href={hint.mediaData}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
-                              >
-                                <span>Extern öffnen</span>
-                                <ExternalLink className="w-3 h-3" />
-                              </a>
+                            {/* 2. Manual Height / Vertical Cutoff Slider & Stepper (Trim White Space) */}
+                            <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                  <Sliders className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                  <span>2. Höhe anpassen (weiße Fläche unten trimmen):</span>
+                                </span>
+                                <span className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-2 py-0.5 rounded-md border border-indigo-200/60 dark:border-indigo-800/60">
+                                  Höhe: {currentDims.height} px
+                                </span>
+                              </div>
+
+                              {/* Interactive Slider and Stepper Buttons */}
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleGeoGebraHeightChange(index, currentDims.height - 30)}
+                                  className="px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0 flex items-center gap-1 shadow-2xs"
+                                  title="Höhe um 30px verringern (unten abschneiden)"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                  <span>30 px</span>
+                                </button>
+                                <input
+                                  type="range"
+                                  min="220"
+                                  max="850"
+                                  step="10"
+                                  value={currentDims.height}
+                                  onChange={(e) =>
+                                    handleGeoGebraHeightChange(index, parseInt(e.target.value, 10))
+                                  }
+                                  className="flex-1 accent-indigo-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                                  aria-label="GeoGebra Höhe anpassen"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleGeoGebraHeightChange(index, currentDims.height + 30)}
+                                  className="px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shrink-0 flex items-center gap-1 shadow-2xs"
+                                  title="Höhe um 30px vergrößern (mehr nach unten zeigen)"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>30 px</span>
+                                </button>
+                              </div>
+
+                              {/* Height Quick Presets */}
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px] pt-0.5">
+                                <span className="text-slate-400 text-[10px] mr-1">Höhen-Presets:</span>
+                                {[
+                                  { label: 'Flach (360 px)', h: 360, desc: 'wenig weiß' },
+                                  { label: 'Mittel (460 px)', h: 460, desc: 'kompakt' },
+                                  { label: 'Standard (580 px)', h: 580, desc: 'normal' },
+                                  { label: 'Hoch (700 px)', h: 700, desc: 'groß' },
+                                ].map((hp) => (
+                                  <button
+                                    key={hp.label}
+                                    type="button"
+                                    onClick={() => handleGeoGebraHeightChange(index, hp.h)}
+                                    className={`px-2 py-0.5 rounded-md border text-[10px] font-medium transition-colors ${
+                                      Math.abs(currentDims.height - hp.h) < 15
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    }`}
+                                  >
+                                    {hp.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                            <div
-                              className="relative w-full rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white"
-                              style={{
-                                aspectRatio: getGeoGebraDimensions(hint.mediaData).aspectRatio,
-                                minHeight: '260px',
-                                maxHeight: '420px',
-                              }}
-                            >
-                              <iframe
-                                src={parseGeoGebraUrl(hint.mediaData) || hint.mediaData}
-                                title="GeoGebra Modell Vorschau"
-                                allowFullScreen
-                                allow="fullscreen; clipboard-read; clipboard-write;"
-                                className="w-full h-full border-0 block"
-                              />
-                            </div>
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1">
-                              <span>💡 Ist die ganze Breite sichtbar? Wähle andernfalls oben „Extra Breit“.</span>
-                              <span>Zoom: +/- unten rechts aktiv</span>
+
+                            {/* 3. Live Preview within the Editor */}
+                            <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                  <span>Live-Vorschau (Ansicht für Schüler)</span>
+                                </span>
+                                <a
+                                  href={hint.mediaData}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                                >
+                                  <span>Extern öffnen</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              </div>
+
+                              {/* Preview Frame with Resizable Bottom Bar */}
+                              <div className="rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-white shadow-xs">
+                                <div
+                                  className="relative w-full overflow-hidden"
+                                  style={{
+                                    aspectRatio: currentDims.aspectRatio,
+                                    maxHeight: '480px',
+                                  }}
+                                >
+                                  <iframe
+                                    src={parseGeoGebraUrl(hint.mediaData) || hint.mediaData}
+                                    title="GeoGebra Modell Vorschau"
+                                    allowFullScreen
+                                    allow="fullscreen; clipboard-read; clipboard-write;"
+                                    className="w-full h-full border-0 block"
+                                  />
+                                </div>
+                                {/* Interactive Resizer Handle directly below preview */}
+                                <div
+                                  onPointerDown={(e) => handlePreviewPointerDown(e, index)}
+                                  className="cursor-ns-resize select-none bg-slate-100 dark:bg-slate-800/90 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border-t border-slate-200 dark:border-slate-700 py-1.5 px-3 flex items-center justify-center gap-2 text-[11px] text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-300 transition-colors"
+                                  title="Gedrückt halten und nach oben/unten ziehen, um die Höhe anzupassen"
+                                >
+                                  <ChevronsUpDown className="w-3.5 h-3.5 text-indigo-500" />
+                                  <span className="font-medium">Unten ziehen zum Zuschneiden der Höhe</span>
+                                  <span className="font-mono text-[10px] text-slate-400">({currentDims.height} px)</span>
+                                </div>
+                              </div>
+
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
+                                💡 <strong>Weiße Fläche unten wegschneiden:</strong> Verringere die Höhe mit dem Regler (z. B. auf 360–460 px) oder ziehe den unteren Rand nach oben, bis die Zeichnung bündig abschließt. Die Schüler sehen das Modell genau in diesem optimierten Zuschnitt!
+                              </p>
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
 

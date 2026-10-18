@@ -136,8 +136,8 @@ export function extractGeoGebraParams(input: string): GeoGebraParams | null {
 
   // Use standard wide 16:10 dimensions (960x600) as default if none specified.
   // This provides ample horizontal canvas space so wide graphs/controls don't get truncated.
-  const finalWidth = width && width >= 400 && width <= 2400 ? width : 960;
-  const finalHeight = height && height >= 300 && height <= 1600 ? height : 600;
+  const finalWidth = width && width >= 300 && width <= 2400 ? width : 960;
+  const finalHeight = height && height >= 200 && height <= 1600 ? height : 600;
 
   return {
     materialId,
@@ -148,7 +148,7 @@ export function extractGeoGebraParams(input: string): GeoGebraParams | null {
 
 /**
  * Returns a fully optimized GeoGebra embed URL ensuring:
- * - Dynamic width/height configured so GeoGebra does not clip the right side
+ * - Dynamic width/height configured so GeoGebra does not clip the right side or leave dead space
  * - Zoom controls (+/-) enabled (szb=true) so students can zoom in/out
  * - Shift-drag pan & zoom enabled (sdz=true)
  * - Fullscreen button enabled (sfsb=true)
@@ -170,8 +170,8 @@ export function parseGeoGebraUrl(
     return target.startsWith('http') ? target : `https://${target}`;
   }
 
-  const w = customWidth || params.width;
-  const h = customHeight || params.height;
+  const w = customWidth !== undefined ? customWidth : params.width;
+  const h = customHeight !== undefined ? customHeight : params.height;
 
   return `https://www.geogebra.org/material/iframe/id/${params.materialId}/width/${w}/height/${h}/rc/false/ai/false/sri/true/szb/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
 }

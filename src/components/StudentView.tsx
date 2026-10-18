@@ -640,9 +640,9 @@ export const StudentView: React.FC<StudentViewProps> = ({
                               </a>
                             </div>
                           </div>
-                          {/* Responsive Dynamic Aspect Ratio Container - Automatically scales to full device width */}
+                          {/* Responsive Dynamic Aspect Ratio Container - Automatically scales to full device width without bottom dead space */}
                           <div
-                            className="relative w-full bg-white min-h-[300px] sm:min-h-[380px] md:min-h-[440px] max-h-[580px] overflow-hidden"
+                            className="relative w-full bg-white min-h-[220px] max-h-[700px] overflow-hidden"
                             style={{ aspectRatio: dims.aspectRatio }}
                           >
                             <iframe
@@ -656,7 +656,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
                           {/* Helper hint for mobile, tablet and desktop */}
                           <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1">
                             <span>💡 Per Maus oder Touch verschieben • Unten rechts mit +/- zoomen</span>
-                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Breite angepasst ({dims.width}×{dims.height})</span>
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">{dims.width} × {dims.height} px</span>
                           </div>
                         </div>
                       );
