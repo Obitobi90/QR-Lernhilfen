@@ -46,6 +46,18 @@ self.addEventListener('fetch', (event) => {
   // Skip chrome-extension or other non-http(s) schemes
   if (!url.protocol.startsWith('http')) return;
 
+  // Never intercept Vite development modules, client scripts, HMR or module imports
+  if (
+    url.pathname.includes('/@vite/') ||
+    url.pathname.includes('/@fs/') ||
+    url.pathname.includes('/@id/') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.includes('vite-hmr') ||
+    url.searchParams.has('t')
+  ) {
+    return;
+  }
+
   // For API and Supabase network requests, try network first
   if (url.pathname.startsWith('/api') || url.hostname.includes('supabase.co')) {
     event.respondWith(
@@ -87,11 +99,15 @@ self.addEventListener('fetch', (event) => {
           });
           return networkResponse;
         })
-        .catch(() => {
+        .catch(async () => {
           // If offline and navigating to HTML page, return cached index.html
           if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
+            const indexFallback = await caches.match('/index.html');
+            if (indexFallback) return indexFallback;
+            const rootFallback = await caches.match('/');
+            if (rootFallback) return rootFallback;
           }
+          return new Response('Offline', { status: 503, statusText: 'Offline' });
         });
     })
   );

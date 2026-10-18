@@ -74,11 +74,12 @@
           }
         }, true);
 
-        // Intercept WebSocket creation for Vite HMR so it does not fail and throw in iframe
-        if (typeof window !== 'undefined' && window.WebSocket) {
+        // Intercept WebSocket creation for Vite HMR safely (compatible with iOS Safari & mobile WebKit)
+        if (typeof window !== 'undefined' && window.WebSocket && !window._viteWsPatched) {
+          window._viteWsPatched = true;
           const OrigWS = window.WebSocket;
           window.WebSocket = function(url, protocols) {
-            const urlStr = String(url);
+            const urlStr = String(url || '');
             const isViteHmr = urlStr.includes('vite-hmr') || protocols === 'vite-hmr' || (Array.isArray(protocols) && protocols.includes('vite-hmr'));
             if (isViteHmr) {
               return {
@@ -103,7 +104,8 @@
                 onmessage: null,
               };
             }
-            return new OrigWS(url, protocols);
+            // CRITICAL for Safari/iOS: never pass undefined protocols as second argument
+            return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
           };
           window.WebSocket.prototype = OrigWS.prototype;
           window.WebSocket.CONNECTING = OrigWS.CONNECTING;
@@ -127,7 +129,50 @@
     </script>
   </head>
   <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen antialiased selection:bg-indigo-500 selection:text-white">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Instant fallback loader before React mounts (prevents blank white page on mobile) -->
+      <div id="initial-app-loader" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #0f172a; padding: 24px; text-align: center; box-sizing: border-box;">
+        <div style="width: 56px; height: 56px; border-radius: 16px; background-color: #4f46e5; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.25);">
+          <svg style="width: 32px; height: 32px; color: white;" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+          </svg>
+        </div>
+        <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 6px 0; color: #1e293b;">QR-Lernhilfen</h2>
+        <p style="font-size: 14px; color: #64748b; margin: 0 0 24px 0; max-width: 320px;">Lernhilfe wird geladen...</p>
+        <div style="width: 34px; height: 34px; border: 3px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%; animation: initial-spin 0.8s linear infinite;"></div>
+        <style>
+          @keyframes initial-spin { to { transform: rotate(360deg); } }
+          @media (prefers-color-scheme: dark) {
+            #initial-app-loader { background-color: #020617 !important; color: #f8fafc !important; }
+            #initial-app-loader h2 { color: #f8fafc !important; }
+            #initial-app-loader p { color: #94a3b8 !important; }
+          }
+        </style>
+        
+        <!-- Helpful smartphone diagnostics if app takes longer than 5s to boot -->
+        <div id="loader-diagnostics" style="display: none; margin-top: 28px; max-width: 440px; background: white; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; text-align: left; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); font-size: 13px; line-height: 1.5;">
+          <strong style="color: #0f172a; display: block; margin-bottom: 6px;">💡 Lädt die Seite auf dem Smartphone nicht?</strong>
+          <span style="color: #475569; display: block; margin-bottom: 10px;">Häufigste Gründe für eine weiße Seite auf dem Smartphone:</span>
+          <ul style="margin: 0; padding-left: 18px; color: #475569;">
+            <li style="margin-bottom: 6px;"><strong>"localhost" im Link:</strong> Wenn du den QR-Code vom PC-Bildschirm gescannt hast und die URL <code>localhost</code> enthält: Ein Smartphone kann nicht auf <code>localhost</code> deines PCs zugreifen. Nutze die <strong>WLAN-IP deines PCs</strong> (z. B. <code>http://192.168.x.x:3000</code>).</li>
+            <li style="margin-bottom: 6px;"><strong>Gleiches WLAN nötig:</strong> Smartphone und PC müssen im selben WLAN angemeldet sein.</li>
+            <li><strong>Browser-Cache / Service Worker:</strong> Manchmal hilft ein Zurücksetzen des Zwischenspeichers.</li>
+          </ul>
+          <div style="margin-top: 14px; display: flex; gap: 8px;">
+            <button onclick="window.location.reload(true)" style="background: #4f46e5; color: white; border: none; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 12px; cursor: pointer;">Neu laden</button>
+            <button onclick="if('caches' in window){caches.keys().then(function(k){return Promise.all(k.map(function(c){return caches.delete(c);}));}).then(function(){window.location.reload(true);});}" style="background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; padding: 7px 14px; border-radius: 8px; font-weight: 600; font-size: 12px; cursor: pointer;">Cache leeren</button>
+          </div>
+        </div>
+      </div>
+      <script>
+        setTimeout(function() {
+          var diag = document.getElementById('loader-diagnostics');
+          if (diag && document.getElementById('initial-app-loader')) {
+            diag.style.display = 'block';
+          }
+        }, 5000);
+      </script>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

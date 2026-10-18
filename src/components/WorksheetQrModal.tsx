@@ -7,6 +7,7 @@ import {
   getCachedShortUrl,
   formatDisplayShortUrl,
 } from '../utils/urlShortener';
+import { buildStudentUrl, isLocalhost, getCustomBaseUrl } from '../utils/appUrl';
 import {
   X,
   Printer,
@@ -20,6 +21,8 @@ import {
   Sparkles,
   Link2,
   RefreshCw,
+  Smartphone,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface WorksheetQrModalProps {
@@ -43,7 +46,7 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   const [shortUrls, setShortUrls] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     items.forEach((item) => {
-      const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+      const studentUrl = buildStudentUrl(item.id);
       const cached = getCachedShortUrl(studentUrl);
       if (cached) initial[item.id] = cached;
     });
@@ -57,7 +60,7 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
     const longUrls: string[] = [];
 
     items.forEach((item) => {
-      const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+      const studentUrl = buildStudentUrl(item.id);
       urlMap[studentUrl] = item.id;
       longUrls.push(studentUrl);
     });
@@ -85,7 +88,7 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
     items.forEach((item) => {
       const canvas = canvasRefs.current[item.id];
       if (canvas) {
-        const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+        const studentUrl = buildStudentUrl(item.id);
         renderStyledQrCode(canvas, studentUrl, { size: 240 }).catch((error) => {
           if (error) console.error('QR code generation error:', error);
         });
@@ -107,9 +110,7 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   }, [items]);
 
   const handleCopyLink = async (item: Lernhilfe) => {
-    const targetUrl =
-      shortUrls[item.id] ||
-      `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+    const targetUrl = shortUrls[item.id] || buildStudentUrl(item.id);
     try {
       await navigator.clipboard.writeText(targetUrl);
       setCopiedId(item.id);
@@ -201,6 +202,18 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             Tipp: Schüler ohne QR-Scanner tippen einfach den kurzen Link im Smartphone-Browser ein.
           </span>
         </div>
+
+        {/* Smartphone localhost warning */}
+        {isLocalhost() && !getCustomBaseUrl() && (
+          <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between gap-3 no-print">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                <strong>Hinweis für Smartphone-Tests:</strong> Du bist über <code>localhost</code> verbunden. QR-Codes mit <code>localhost</code> führen auf Smartphones zu einer weißen Seite. Trage im Einzel-QR-Dialog deine WLAN-IP ein.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable Printable Content Area */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body">

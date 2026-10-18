@@ -7,6 +7,13 @@ import {
   formatDisplayShortUrl,
 } from '../utils/urlShortener';
 import {
+  buildStudentUrl,
+  isLocalhost,
+  getCustomBaseUrl,
+  saveCustomBaseUrl,
+  fetchServerNetworkInfo,
+} from '../utils/appUrl';
+import {
   X,
   Download,
   Copy,
@@ -22,6 +29,10 @@ import {
   RotateCcw,
   Link2,
   RefreshCw,
+  Smartphone,
+  Wifi,
+  AlertTriangle,
+  Info,
 } from 'lucide-react';
 
 interface QrCodeModalProps {
@@ -46,9 +57,25 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
   const [copiedImage, setCopiedImage] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Formulate student URL
-  const studentUrl = `${window.location.origin}${window.location.pathname}?id=${encodeURIComponent(item.id)}`;
+  const [customBaseUrl, setCustomBaseUrlState] = useState<string>(() => getCustomBaseUrl());
+  const [detectedIps, setDetectedIps] = useState<string[]>([]);
+  const [suggestedUrls, setSuggestedUrls] = useState<string[]>([]);
+  const [showNetworkHelper, setShowNetworkHelper] = useState(false);
+  const [customIpInput, setCustomIpInput] = useState<string>('');
+
+  // Formulate student URL using buildStudentUrl (supports custom base URL for smartphone access)
+  const studentUrl = buildStudentUrl(item.id);
   const [shortUrl, setShortUrl] = useState<string>(() => getCachedShortUrl(studentUrl) || '');
+
+  // Detect server network IPs for easy LAN smartphone connection
+  useEffect(() => {
+    fetchServerNetworkInfo().then((info) => {
+      if (info) {
+        setDetectedIps(info.ipAddresses);
+        setSuggestedUrls(info.suggestedUrls);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
@@ -64,10 +91,11 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
 
   const [qrDesign, setQrDesign] = useState<QrDesignSettings>(() => getQrDesignSettings());
 
-  const drawQr = (overrideSettings?: QrDesignSettings) => {
+  const drawQr = (overrideSettings?: QrDesignSettings, urlOverride?: string) => {
     if (canvasRef.current) {
       const activeSettings = overrideSettings || getQrDesignSettings();
-      renderStyledQrCode(canvasRef.current, studentUrl, { size: 300, customSettings: activeSettings }).catch((error) => {
+      const targetUrl = urlOverride || studentUrl;
+      renderStyledQrCode(canvasRef.current, targetUrl, { size: 300, customSettings: activeSettings }).catch((error) => {
         console.error('QR code generation error:', error);
       });
     }
@@ -83,6 +111,13 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
     setQrDesign(updated);
     saveQrDesignSettings(updated);
     drawQr(updated);
+  };
+
+  const handleApplyBaseUrl = (newBase: string) => {
+    saveCustomBaseUrl(newBase);
+    setCustomBaseUrlState(newBase);
+    const updatedStudentUrl = buildStudentUrl(item.id);
+    drawQr(qrDesign, updatedStudentUrl);
   };
 
   useEffect(() => {
@@ -288,6 +323,97 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
                   <span>QR-Bogen</span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Smartphone Localhost Notice & Network IP Helper */}
+          {(isLocalhost() || showNetworkHelper || !!customBaseUrl) && (
+            <div className={`w-full p-3 rounded-xl border text-left text-xs space-y-2 ${
+              isLocalhost() && !customBaseUrl
+                ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+            }`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Smartphone-Test &amp; WLAN-Zugriff:</span>
+                </div>
+                {isLocalhost() && !customBaseUrl ? (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 dark:bg-amber-900 text-amber-800 dark:text-amber-200 uppercase">
+                    localhost aktiv
+                  </span>
+                ) : customBaseUrl ? (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 uppercase flex items-center gap-1">
+                    <Check className="w-3 h-3" /> WLAN-IP aktiv
+                  </span>
+                ) : null}
+              </div>
+
+              {isLocalhost() && !customBaseUrl && (
+                <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                  <strong>Warum bleibt die Seite auf dem Smartphone weiß?</strong> Der QR-Code enthält aktuell <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/60 rounded font-mono">localhost</code>. Ein Smartphone kann nicht auf <code className="font-mono">localhost</code> deines Computers zugreifen. Wähle unten deine <strong>WLAN-IP</strong>, damit der QR-Code auf deinem Smartphone funktioniert.
+                </p>
+              )}
+
+              {/* Quick Suggestions from server */}
+              {suggestedUrls.length > 0 && (
+                <div className="space-y-1 pt-1">
+                  <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 block">
+                    Gefundene lokale Netzwerk-Adressen (WLAN / LAN):
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {suggestedUrls.map((sUrl) => (
+                      <button
+                        key={sUrl}
+                        type="button"
+                        onClick={() => handleApplyBaseUrl(sUrl)}
+                        className={`px-2 py-1 rounded-md text-[11px] font-mono font-medium border transition-colors flex items-center gap-1 ${
+                          customBaseUrl === sUrl
+                            ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-indigo-500'
+                        }`}
+                      >
+                        <Wifi className="w-3 h-3 text-indigo-500" />
+                        <span>{sUrl}</span>
+                        {customBaseUrl === sUrl && <Check className="w-3 h-3 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Base URL Input */}
+              <div className="flex items-center gap-1.5 pt-1">
+                <input
+                  type="text"
+                  placeholder="Eigene IP/Domain (z. B. http://192.168.1.50:3000)"
+                  value={customIpInput}
+                  onChange={(e) => setCustomIpInput(e.target.value)}
+                  className="flex-1 px-2.5 py-1 text-[11px] font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customIpInput.trim()) {
+                      handleApplyBaseUrl(customIpInput.trim());
+                      setCustomIpInput('');
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold rounded-lg shrink-0 transition-colors"
+                >
+                  Übernehmen
+                </button>
+                {customBaseUrl && (
+                  <button
+                    type="button"
+                    onClick={() => handleApplyBaseUrl('')}
+                    title="Auf Standard zurücksetzen"
+                    className="p-1 text-slate-400 hover:text-rose-500 transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

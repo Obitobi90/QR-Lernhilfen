@@ -58,10 +58,11 @@ const suppressViteHmrPlugin: Plugin = {
                 }
               }, true);
 
-              if (typeof window !== 'undefined' && window.WebSocket) {
+              if (typeof window !== 'undefined' && window.WebSocket && !window._viteWsPatched) {
+                window._viteWsPatched = true;
                 const OrigWS = window.WebSocket;
                 window.WebSocket = function(url, protocols) {
-                  const urlStr = String(url);
+                  const urlStr = String(url || '');
                   const isViteHmr = urlStr.includes('vite-hmr') || protocols === 'vite-hmr' || (Array.isArray(protocols) && protocols.includes('vite-hmr'));
                   if (isViteHmr) {
                     return {
@@ -86,7 +87,7 @@ const suppressViteHmrPlugin: Plugin = {
                       onmessage: null,
                     };
                   }
-                  return new OrigWS(url, protocols);
+                  return protocols !== undefined ? new OrigWS(url, protocols) : new OrigWS(url);
                 };
                 window.WebSocket.prototype = OrigWS.prototype;
                 window.WebSocket.CONNECTING = OrigWS.CONNECTING;

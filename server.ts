@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 
 dotenv.config();
 process.env.DISABLE_HMR = 'true';
@@ -820,6 +821,26 @@ app.get('/t/:id', (req, res) => {
 app.get('/s/:id', (req, res) => {
   const { id } = req.params;
   return res.redirect(`/?id=${encodeURIComponent(id)}`);
+});
+
+// Network info endpoint to provide local IP addresses for testing on smartphones
+app.get('/api/network-info', (_req, res) => {
+  const interfaces = os.networkInterfaces();
+  const addresses: string[] = [];
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        addresses.push(iface.address);
+      }
+    }
+  }
+
+  return res.json({
+    port: PORT,
+    ipAddresses: addresses,
+    suggestedUrls: addresses.map((ip) => `http://${ip}:${PORT}`),
+  });
 });
 
 async function startServer() {
