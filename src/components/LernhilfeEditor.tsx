@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lernhilfe, Hint, MediaType } from '../types';
+import { Lernhilfe, Hint, MediaType, DisclosureMode } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import { parseYouTubeUrl, parseGeoGebraUrl, parseH5PUrl } from '../utils/mediaParser';
 import { generateSteppedHintsWithAI, extractTaskTextFromImage } from '../utils/geminiGenerator';
@@ -96,6 +96,9 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             mediaType: 'none',
           },
         ]
+  );
+  const [disclosureMode, setDisclosureMode] = useState<DisclosureMode>(
+    initialItem?.disclosure_mode || 'stepped'
   );
 
   // Active math helper index (-1 if none open)
@@ -406,6 +409,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       group_name: groupName.trim() || undefined,
       task_context: taskContext.trim(),
       task_image: taskImage,
+      disclosure_mode: disclosureMode,
       hints,
       created_at: initialItem?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -991,6 +995,44 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <Plus className="w-3.5 h-3.5" />
                 <span>Tipp hinzufügen</span>
               </button>
+            </div>
+
+            {/* Mode selection for hint disclosure */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                  Tipp-Freischaltung für Schüler:
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                  {disclosureMode === 'stepped'
+                    ? '🎯 Gestuft: Schüler decken die Tipps nacheinander per Klick auf (Didaktische Stufung).'
+                    : '📖 Alle direkt sichtbar: Alle Tipps sind von Anfang an aufgelistet (standardmäßig alle eingeklappt).'}
+                </span>
+              </div>
+              <div className="flex items-center bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-300 dark:border-slate-700 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setDisclosureMode('stepped')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    disclosureMode === 'stepped'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Nach &amp; nach (Gestuft)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisclosureMode('all_visible')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    disclosureMode === 'all_visible'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Alle Tipps direkt sichtbar
+                </button>
+              </div>
             </div>
 
             {/* Hint Cards List: Mobile-first layout */}

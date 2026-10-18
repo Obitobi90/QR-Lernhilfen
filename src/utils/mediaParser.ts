@@ -66,21 +66,31 @@ export function parseGeoGebraUrl(input: string): string | null {
   try {
     const url = new URL(target.startsWith('http') ? target : `https://${target}`);
     if (url.hostname.includes('geogebra.org')) {
+      let materialId: string | null = null;
       if (url.pathname.startsWith('/m/')) {
-        const materialId = url.pathname.replace('/m/', '').split('/')[0];
-        return `https://www.geogebra.org/material/iframe/id/${materialId}/rc/false/ai/false`;
+        materialId = url.pathname.replace('/m/', '').split('/')[0];
+      } else if (url.pathname.startsWith('/classic/')) {
+        materialId = url.pathname.replace('/classic/', '').split('/')[0];
+      } else if (url.pathname.includes('/material/iframe/id/')) {
+        const parts = url.pathname.split('/material/iframe/id/')[1]?.split('/');
+        if (parts && parts[0]) {
+          materialId = parts[0];
+        }
       }
-      if (url.pathname.startsWith('/classic/')) {
-        const materialId = url.pathname.replace('/classic/', '').split('/')[0];
-        return `https://www.geogebra.org/material/iframe/id/${materialId}/rc/false/ai/false`;
+
+      if (materialId) {
+        // sri=true (Scale Ratio Invert) makes GeoGebra scale dynamically to fill the container without white letterbox void.
+        // sfsb=true (Show Fullscreen Button) allows students to expand when needed.
+        // smb=false, stb=false, stbh=false, ai=false cleans up unnecessary teacher toolbars.
+        return `https://www.geogebra.org/material/iframe/id/${materialId}/rc/false/ai/false/sri/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
       }
       return target;
     }
   } catch (e) {
     // regex fallback
-    const match = target.match(/geogebra\.org\/m\/([a-zA-Z0-9]+)/);
+    const match = target.match(/geogebra\.org\/(?:m|classic|material\/iframe\/id)\/([a-zA-Z0-9]+)/);
     if (match) {
-      return `https://www.geogebra.org/material/iframe/id/${match[1]}/rc/false/ai/false`;
+      return `https://www.geogebra.org/material/iframe/id/${match[1]}/rc/false/ai/false/sri/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
     }
   }
 

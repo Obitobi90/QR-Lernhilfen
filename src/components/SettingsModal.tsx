@@ -68,6 +68,12 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  Move,
+  Crosshair,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 
 
@@ -277,6 +283,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
         customLogoDataUrl: sketchUrl,
         centerLogoType: 'sketch_drawing',
         name: 'Mit Skizzen-Zeichnung',
+        logoZoom: 1.0,
+        logoOffsetX: 0,
+        logoOffsetY: 0,
       }));
     } catch (err: any) {
       console.error('Logo upload error:', err);
@@ -939,7 +948,7 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                             src={qrSettings.customLogoDataUrl || qrSettings.rawUploadedImage}
                             alt="Skizze"
                             style={{
-                              transform: `scale(${qrSettings.logoZoom || 1.0})`,
+                              transform: `translate(${qrSettings.logoOffsetX || 0}%, ${qrSettings.logoOffsetY || 0}%) scale(${qrSettings.logoZoom || 1.0})`,
                               transformOrigin: 'center center',
                               objectFit: qrSettings.logoFit === 'cover' ? 'cover' : 'contain',
                             }}
@@ -964,9 +973,14 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                           <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
                             Zoom: {Math.round((qrSettings.logoZoom || 1.0) * 100)}%
                           </span>
+                          {((qrSettings.logoOffsetX || 0) !== 0 || (qrSettings.logoOffsetY || 0) !== 0) && (
+                            <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                              Pos: X {qrSettings.logoOffsetX || 0}% / Y {qrSettings.logoOffsetY || 0}%
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Das Foto wurde in saubere Konturlinien umgewandelt. Du kannst den Stil, die Strichfarbe und den Zoom direkt hier unten einstellen:
+                          Das Foto wurde in saubere Konturlinien umgewandelt. Du kannst den Stil, die Strichfarbe, den Zoom und die Bildposition direkt hier unten einstellen:
                         </p>
                       </div>
                     </div>
@@ -1152,6 +1166,138 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
                           <p className="text-[10px] text-indigo-600 dark:text-indigo-400 leading-snug">
                             💡 Tipp: Schmale oder längliche Skizzen bei 140% – 200% vergrößern. Du siehst die genaue Einpassung sofort links in der Live-Vorschau – ohne hochscrollen zu müssen!
                           </p>
+
+                          {/* Bildausschnitt verschieben (Pan / Positionierung) */}
+                          <div className="pt-2.5 border-t border-slate-200/80 dark:border-slate-800 space-y-2">
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <Move className="w-3.5 h-3.5 text-indigo-500" />
+                                <span>Bildausschnitt verschieben (Position):</span>
+                              </span>
+                              {((qrSettings.logoOffsetX || 0) !== 0 || (qrSettings.logoOffsetY || 0) !== 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setQrSettings((prev) => ({
+                                      ...prev,
+                                      logoOffsetX: 0,
+                                      logoOffsetY: 0,
+                                    }))
+                                  }
+                                  className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold flex items-center gap-1"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Zentrieren (0, 0)</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                              {/* Horizontal (X) */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-500 dark:text-slate-400 font-medium">Horizontal (X):</span>
+                                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                    {(qrSettings.logoOffsetX || 0) > 0 ? `+${qrSettings.logoOffsetX}` : qrSettings.logoOffsetX || 0}%
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetX: Math.max(-100, (prev.logoOffsetX || 0) - 5),
+                                      }))
+                                    }
+                                    title="Nach links (-5%)"
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950 transition-colors"
+                                  >
+                                    <ArrowLeft className="w-3 h-3" />
+                                  </button>
+                                  <input
+                                    type="range"
+                                    min="-100"
+                                    max="100"
+                                    step="2"
+                                    value={qrSettings.logoOffsetX || 0}
+                                    onChange={(e) =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetX: Number(e.target.value),
+                                      }))
+                                    }
+                                    className="flex-1 accent-indigo-600 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetX: Math.min(100, (prev.logoOffsetX || 0) + 5),
+                                      }))
+                                    }
+                                    title="Nach rechts (+5%)"
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950 transition-colors"
+                                  >
+                                    <ArrowRight className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Vertikal (Y) */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-500 dark:text-slate-400 font-medium">Vertikal (Y):</span>
+                                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                                    {(qrSettings.logoOffsetY || 0) > 0 ? `+${qrSettings.logoOffsetY}` : qrSettings.logoOffsetY || 0}%
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetY: Math.max(-100, (prev.logoOffsetY || 0) - 5),
+                                      }))
+                                    }
+                                    title="Nach oben (-5%)"
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950 transition-colors"
+                                  >
+                                    <ArrowUp className="w-3 h-3" />
+                                  </button>
+                                  <input
+                                    type="range"
+                                    min="-100"
+                                    max="100"
+                                    step="2"
+                                    value={qrSettings.logoOffsetY || 0}
+                                    onChange={(e) =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetY: Number(e.target.value),
+                                      }))
+                                    }
+                                    className="flex-1 accent-indigo-600 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setQrSettings((prev) => ({
+                                        ...prev,
+                                        logoOffsetY: Math.min(100, (prev.logoOffsetY || 0) + 5),
+                                      }))
+                                    }
+                                    title="Nach unten (+5%)"
+                                    className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950 transition-colors"
+                                  >
+                                    <ArrowDown className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>

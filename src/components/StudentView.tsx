@@ -31,6 +31,7 @@ import {
   ChevronsUpDown,
   RotateCcw,
   Sparkle,
+  ExternalLink,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -57,8 +58,13 @@ export const StudentView: React.FC<StudentViewProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  // Revealed hints count. Initially, only Hint 1 is available to unfold.
-  const [unlockedCount, setUnlockedCount] = useState<number>(1);
+  // Revealed hints count.
+  // If item.disclosure_mode === 'all_visible', all hints are directly visible (collapsed).
+  // Otherwise, stepped progressive disclosure starting at 1.
+  const isAllVisible = item.disclosure_mode === 'all_visible';
+  const [unlockedCount, setUnlockedCount] = useState<number>(() =>
+    item.disclosure_mode === 'all_visible' ? item.hints.length : 1
+  );
 
   // Track open/collapsed state of each revealed hint.
   // Initially, all hints (including Tipp 1) start COLLAPSED as requested.
@@ -100,8 +106,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
   // Reset states and record views if item changes
   useEffect(() => {
-    setUnlockedCount(1);
-    // Explicitly collapsed by default - the student must actively unfold Tipp 1
+    setUnlockedCount(item.disclosure_mode === 'all_visible' ? item.hints.length : 1);
+    // Explicitly collapsed by default - the student must actively unfold hints
     setOpenHints({});
     setUnlockedPins({});
     setPinInputs({});
@@ -222,6 +228,17 @@ export const StudentView: React.FC<StudentViewProps> = ({
       setOpenHints((prev) => ({ ...prev, [hintId]: true }));
       if (!isTeacherPreview) {
         recordHintView(item.id, hintId);
+      }
+
+      // Automatically scroll smoothly to this unlocked hint
+      const hintIndex = item.hints.findIndex((h) => h.id === hintId);
+      if (hintIndex !== -1) {
+        setTimeout(() => {
+          const el = document.getElementById(`hint-card-${hintIndex}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 120);
       }
     } else {
       setPinErrors((prev) => ({ ...prev, [hintId]: true }));
@@ -566,13 +583,33 @@ export const StudentView: React.FC<StudentViewProps> = ({
                     )}
 
                     {hint.mediaType === 'geogebra' && hint.mediaData && (
-                      <div className="relative h-[380px] sm:h-[460px] lg:h-[500px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-white">
-                        <iframe
-                          src={parseGeoGebraUrl(hint.mediaData) || hint.mediaData}
-                          title="GeoGebra Interaktives Modell"
-                          allowFullScreen
-                          className="w-full h-full border-0"
-                        />
+                      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-slate-50 dark:bg-slate-900/40">
+                        {/* Header bar for GeoGebra Applet */}
+                        <div className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                            <span>Interaktives GeoGebra Modell</span>
+                          </span>
+                          <a
+                            href={hint.mediaData}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+                            title="In neuem Tab / Vollbild auf GeoGebra öffnen"
+                          >
+                            <span>Vollbild / extern</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        {/* Dynamic Aspect Ratio Container - Prevents large white letterbox space underneath */}
+                        <div className="relative aspect-[16/10] sm:aspect-[16/9] min-h-[300px] max-h-[460px] w-full bg-white">
+                          <iframe
+                            src={parseGeoGebraUrl(hint.mediaData) || hint.mediaData}
+                            title="GeoGebra Interaktives Modell"
+                            allowFullScreen
+                            className="w-full h-full border-0 block"
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -670,7 +707,11 @@ export const StudentView: React.FC<StudentViewProps> = ({
           <div className="p-4 sm:p-5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-2xl text-center space-y-1">
             <div className="flex items-center justify-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold text-sm sm:text-base">
               <CheckCircle2 className="w-5 h-5" />
-              <span>Alle Denkanstöße wurden aufgedeckt</span>
+              <span>
+                {item.disclosure_mode === 'all_visible'
+                  ? 'Alle Denkanstöße stehen dir zur Verfügung'
+                  : 'Alle Denkanstöße wurden aufgedeckt'}
+              </span>
             </div>
             <p className="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
               Nutze diese Hilfen, um deine eigene Lösung aufzuschreiben und zu begründen.

@@ -1,5 +1,7 @@
 export type MediaType = 'none' | 'image' | 'audio' | 'youtube' | 'geogebra' | 'h5p';
 
+export type DisclosureMode = 'stepped' | 'all_visible'; // 'stepped' (nach und nach freischalten) or 'all_visible' (alle Tipps von Anfang an sichtbar, eingeklappt)
+
 export interface Hint {
   id: string;
   title: string;
@@ -17,6 +19,7 @@ export interface Lernhilfe {
   group_name?: string; // Optionale Gruppierung / Arbeitsblatt-Name (z. B. "Arbeitsblatt zum Satz des Pythagoras")
   task_context: string;
   task_image?: string;
+  disclosure_mode?: DisclosureMode; // Gestufte Freischaltung ('stepped') oder alle Tipps direkt sichtbar ('all_visible')
   hints: Hint[];
   created_at: string;
   updated_at: string;
