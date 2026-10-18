@@ -1,0 +1,18 @@
+{
+  "stats": {
+    "test-lernhilfe-1": {
+      "lernhilfeId": "test-lernhilfe-1",
+      "totalViews": 1,
+      "hintStats": {
+        "h1": {
+          "hintId": "h1",
+          "views": 1,
+          "helpfulCount": 0,
+          "unhelpfulCount": 0
+        }
+      },
+      "updatedAt": "2026-10-18T14:39:59.665Z"
+    }
+  },
+  "votes": {}
+}

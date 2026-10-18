@@ -361,7 +361,16 @@ app.post('/api/stats/:lernhilfeId/vote', (req, res) => {
   }
 
   const hintStat = stat.hintStats[hintId];
-  const existingVote = votesDb[voterKey];
+  const existingKey = Object.keys(votesDb).find((key) => {
+    if (key === voterKey) return true;
+    const [lId, hId, ip, vId] = key.split(':::');
+    if (lId !== lernhilfeId || hId !== hintId) return false;
+    if (voterId && vId && vId === voterId) return true;
+    if (clientIp && ip && ip === clientIp) return true;
+    return false;
+  }) || voterKey;
+
+  const existingVote = votesDb[existingKey];
 
   if (existingVote) {
     if (existingVote.rating === rating) {
@@ -371,7 +380,7 @@ app.post('/api/stats/:lernhilfeId/vote', (req, res) => {
       } else {
         hintStat.unhelpfulCount = Math.max(0, hintStat.unhelpfulCount - 1);
       }
-      delete votesDb[voterKey];
+      delete votesDb[existingKey];
       stat.updatedAt = new Date().toISOString();
       saveStatsToDisk();
 

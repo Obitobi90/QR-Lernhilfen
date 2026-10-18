@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lernhilfe, Hint } from '../types';
 import { LaTeXRenderer } from '../utils/latexRenderer';
-import { parseYouTubeUrl, parseGeoGebraUrl, parseH5PUrl } from '../utils/mediaParser';
+import { parseYouTubeUrl, parseGeoGebraUrl, parseH5PUrl, getGeoGebraDimensions } from '../utils/mediaParser';
 import {
   ChevronDown,
   ChevronUp,
@@ -93,6 +93,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
   // Lightbox modal for enlarged diagram inspection on tablet & desktop
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title: string } | null>(null);
+  // Fullscreen / enlarged interactive modal for GeoGebra models
+  const [geoGebraModal, setGeoGebraModal] = useState<{
+    embedUrl: string;
+    externalUrl: string;
+    title: string;
+  } | null>(null);
 
   // Pupil suggestions for additional/better hints
   const [showSuggestionForm, setShowSuggestionForm] = useState<boolean>(false);
@@ -195,8 +201,21 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
   const handleVote = async (hintId: string, type: 'up' | 'down') => {
     const current = userVotes[hintId];
-    if (current === type) return;
+    if (current === type) {
+      // Toggle off: remove active rating
+      setUserVotes((prev) => {
+        const next = { ...prev };
+        delete next[hintId];
+        return next;
+      });
 
+      if (!isTeacherPreview) {
+        await voteHint(item.id, hintId, type);
+      }
+      return;
+    }
+
+    // Set or switch vote
     setUserVotes((prev) => ({ ...prev, [hintId]: type }));
 
     if (!isTeacherPreview) {
@@ -582,36 +601,66 @@ export const StudentView: React.FC<StudentViewProps> = ({
                       </div>
                     )}
 
-                    {hint.mediaType === 'geogebra' && hint.mediaData && (
-                      <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-slate-50 dark:bg-slate-900/40">
-                        {/* Header bar for GeoGebra Applet */}
-                        <div className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
-                          <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                            <span>Interaktives GeoGebra Modell</span>
-                          </span>
-                          <a
-                            href={hint.mediaData}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
-                            title="In neuem Tab / Vollbild auf GeoGebra öffnen"
+                    {hint.mediaType === 'geogebra' && hint.mediaData && (() => {
+                      const embedUrl = parseGeoGebraUrl(hint.mediaData) || hint.mediaData;
+                      const dims = getGeoGebraDimensions(hint.mediaData);
+                      return (
+                        <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-slate-50 dark:bg-slate-900/40">
+                          {/* Header bar for GeoGebra Applet */}
+                          <div className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                              <span>Interaktives GeoGebra Modell</span>
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setGeoGebraModal({
+                                    embedUrl,
+                                    externalUrl: hint.mediaData!,
+                                    title: hint.title || 'Interaktives GeoGebra Modell',
+                                  })
+                                }
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-white dark:hover:bg-slate-800 px-2 py-0.5 rounded-md transition-colors"
+                                title="Auf voller Bildschirmbreite vergrößern"
+                              >
+                                <Maximize2 className="w-3 h-3" />
+                                <span>Vergrößern</span>
+                              </button>
+                              <a
+                                href={hint.mediaData}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400"
+                                title="In neuem Tab / Vollbild auf GeoGebra öffnen"
+                              >
+                                <span>Extern</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+                          {/* Responsive Dynamic Aspect Ratio Container - Automatically scales to full device width */}
+                          <div
+                            className="relative w-full bg-white min-h-[300px] sm:min-h-[380px] md:min-h-[440px] max-h-[580px] overflow-hidden"
+                            style={{ aspectRatio: dims.aspectRatio }}
                           >
-                            <span>Vollbild / extern</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                            <iframe
+                              src={embedUrl}
+                              title="GeoGebra Interaktives Modell"
+                              allowFullScreen
+                              allow="fullscreen; clipboard-read; clipboard-write;"
+                              className="w-full h-full border-0 block"
+                            />
+                          </div>
+                          {/* Helper hint for mobile, tablet and desktop */}
+                          <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center justify-between gap-1">
+                            <span>💡 Per Maus oder Touch verschieben • Unten rechts mit +/- zoomen</span>
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">Breite angepasst ({dims.width}×{dims.height})</span>
+                          </div>
                         </div>
-                        {/* Dynamic Aspect Ratio Container - Prevents large white letterbox space underneath */}
-                        <div className="relative aspect-[16/10] sm:aspect-[16/9] min-h-[300px] max-h-[460px] w-full bg-white">
-                          <iframe
-                            src={parseGeoGebraUrl(hint.mediaData) || hint.mediaData}
-                            title="GeoGebra Interaktives Modell"
-                            allowFullScreen
-                            className="w-full h-full border-0 block"
-                          />
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {hint.mediaType === 'h5p' && hint.mediaData && (
                       <div className="relative min-h-[380px] sm:min-h-[460px] lg:min-h-[500px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xs bg-white">
@@ -633,11 +682,11 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleVote(hint.id, 'up')}
-                          title="Tipp war hilfreich"
-                          aria-label="Tipp war hilfreich"
-                          className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1.5 text-xs transition-colors ${
+                          title={userVotes[hint.id] === 'up' ? 'Wertung zurücknehmen (Klicken zum Abwählen)' : 'Tipp war hilfreich'}
+                          aria-label={userVotes[hint.id] === 'up' ? 'Wertung zurücknehmen' : 'Tipp war hilfreich'}
+                          className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all active:scale-95 ${
                             userVotes[hint.id] === 'up'
-                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold ring-1 ring-emerald-300 dark:ring-emerald-800'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold ring-1 ring-emerald-300 dark:ring-emerald-800 shadow-xs'
                               : 'text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                           }`}
                         >
@@ -647,11 +696,11 @@ export const StudentView: React.FC<StudentViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleVote(hint.id, 'down')}
-                          title="Tipp war nicht so hilfreich"
-                          aria-label="Tipp war nicht so hilfreich"
-                          className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1.5 text-xs transition-colors ${
+                          title={userVotes[hint.id] === 'down' ? 'Wertung zurücknehmen (Klicken zum Abwählen)' : 'Tipp war nicht so hilfreich'}
+                          aria-label={userVotes[hint.id] === 'down' ? 'Wertung zurücknehmen' : 'Tipp war nicht so hilfreich'}
+                          className={`p-1.5 sm:px-2.5 sm:py-1 rounded-lg flex items-center gap-1.5 text-xs transition-all active:scale-95 ${
                             userVotes[hint.id] === 'down'
-                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-semibold ring-1 ring-rose-300 dark:ring-rose-800'
+                              ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-semibold ring-1 ring-rose-300 dark:ring-rose-800 shadow-xs'
                               : 'text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
                           }`}
                         >
@@ -945,6 +994,59 @@ export const StudentView: React.FC<StudentViewProps> = ({
             </div>
             <div className="text-center text-xs text-slate-400">
               Klicke außerhalb oder auf das Kreuz zum Schließen
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen & Enlarged GeoGebra Interactive Modal */}
+      {geoGebraModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-2 sm:p-6 animate-in fade-in"
+          onClick={() => setGeoGebraModal(null)}
+        >
+          <div
+            className="relative max-w-6xl w-full h-[90vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-300 dark:border-slate-800"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between px-4 py-3 bg-slate-100 dark:bg-slate-800/90 border-b border-slate-200 dark:border-slate-700">
+              <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                <span className="truncate">{geoGebraModal.title || 'Interaktives GeoGebra Modell (Vollbild)'}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={geoGebraModal.externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-white dark:hover:bg-slate-700/60 rounded-lg transition-colors"
+                >
+                  <span className="hidden sm:inline">Auf GeoGebra öffnen</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setGeoGebraModal(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                  title="Schließen"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 w-full bg-white relative">
+              <iframe
+                src={geoGebraModal.embedUrl}
+                title="GeoGebra Interaktives Modell Vollbild"
+                allowFullScreen
+                allow="fullscreen; clipboard-read; clipboard-write;"
+                className="w-full h-full border-0 block"
+              />
+            </div>
+            <div className="px-4 py-2 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+              💡 Vollansicht: Du kannst das Modell mit Maus oder Fingern verschieben und unten rechts mit + / - zoomen.
             </div>
           </div>
         </div>

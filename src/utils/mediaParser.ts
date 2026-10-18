@@ -1,7 +1,7 @@
 /**
  * Utilities for parsing and converting educational media links:
  * - Converts any YouTube link into a privacy-friendly https://www.youtube-nocookie.com/embed/... URL
- * - Extracts clean embed URLs from GeoGebra links or pasted <iframe> code
+ * - Extracts clean embed URLs from GeoGebra links or pasted <iframe> code with full responsive width & aspect ratio
  * - Extracts clean embed URLs from H5P links or pasted <iframe> code
  */
 
@@ -51,50 +51,147 @@ export function parseYouTubeUrl(input: string): string | null {
   return null;
 }
 
-export function parseGeoGebraUrl(input: string): string | null {
+export interface GeoGebraParams {
+  materialId: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Extracts the material ID, width, and height from any GeoGebra link or <iframe> snippet.
+ */
+export function extractGeoGebraParams(input: string): GeoGebraParams | null {
   if (!input || !input.trim()) return null;
   const str = input.trim();
 
-  // If iframe snippet was pasted: <iframe ... src="...
+  // Check if an iframe was pasted
   const iframeMatch = str.match(/src=["'](.*?)["']/);
   const target = iframeMatch ? iframeMatch[1] : str;
 
-  // Patterns:
-  // - https://www.geogebra.org/m/abc12345
-  // - https://www.geogebra.org/classic/abc12345
-  // - https://www.geogebra.org/material/iframe/id/abc12345/...
+  // Check if width / height were in iframe attributes or URL path
+  let width: number | null = null;
+  let height: number | null = null;
+
+  const widthAttr = str.match(/\bwidth=["']?(\d+)/i);
+  const heightAttr = str.match(/\bheight=["']?(\d+)/i);
+  if (widthAttr && widthAttr[1]) width = parseInt(widthAttr[1], 10);
+  if (heightAttr && heightAttr[1]) height = parseInt(heightAttr[1], 10);
+
+  const urlWidthMatch = target.match(/\/width\/(\d+)/i);
+  const urlHeightMatch = target.match(/\/height\/(\d+)/i);
+  if (urlWidthMatch && urlWidthMatch[1]) width = parseInt(urlWidthMatch[1], 10);
+  if (urlHeightMatch && urlHeightMatch[1]) height = parseInt(urlHeightMatch[1], 10);
+
+  let materialId: string | null = null;
+
   try {
     const url = new URL(target.startsWith('http') ? target : `https://${target}`);
     if (url.hostname.includes('geogebra.org')) {
-      let materialId: string | null = null;
-      if (url.pathname.startsWith('/m/')) {
-        materialId = url.pathname.replace('/m/', '').split('/')[0];
-      } else if (url.pathname.startsWith('/classic/')) {
-        materialId = url.pathname.replace('/classic/', '').split('/')[0];
-      } else if (url.pathname.includes('/material/iframe/id/')) {
-        const parts = url.pathname.split('/material/iframe/id/')[1]?.split('/');
+      const path = url.pathname;
+      if (path.startsWith('/m/')) {
+        materialId = path.replace('/m/', '').split('/')[0];
+      } else if (path.startsWith('/classic/')) {
+        materialId = path.replace('/classic/', '').split('/')[0];
+      } else if (path.startsWith('/calculator/')) {
+        materialId = path.replace('/calculator/', '').split('/')[0];
+      } else if (path.startsWith('/geometry/')) {
+        materialId = path.replace('/geometry/', '').split('/')[0];
+      } else if (path.startsWith('/graphing/')) {
+        materialId = path.replace('/graphing/', '').split('/')[0];
+      } else if (path.startsWith('/3d/')) {
+        materialId = path.replace('/3d/', '').split('/')[0];
+      } else if (path.includes('/material/iframe/id/')) {
+        const parts = path.split('/material/iframe/id/')[1]?.split('/');
+        if (parts && parts[0]) {
+          materialId = parts[0];
+        }
+      } else if (path.includes('/material/show/id/')) {
+        const parts = path.split('/material/show/id/')[1]?.split('/');
         if (parts && parts[0]) {
           materialId = parts[0];
         }
       }
-
-      if (materialId) {
-        // sri=true (Scale Ratio Invert) makes GeoGebra scale dynamically to fill the container without white letterbox void.
-        // sfsb=true (Show Fullscreen Button) allows students to expand when needed.
-        // smb=false, stb=false, stbh=false, ai=false cleans up unnecessary teacher toolbars.
-        return `https://www.geogebra.org/material/iframe/id/${materialId}/rc/false/ai/false/sri/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
-      }
-      return target;
     }
   } catch (e) {
-    // regex fallback
-    const match = target.match(/geogebra\.org\/(?:m|classic|material\/iframe\/id)\/([a-zA-Z0-9]+)/);
-    if (match) {
-      return `https://www.geogebra.org/material/iframe/id/${match[1]}/rc/false/ai/false/sri/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
+    // Ignore URL parse error and continue to regex fallback
+  }
+
+  // Regex fallback for various formats
+  if (!materialId) {
+    const match = target.match(
+      /(?:geogebra\.org\/(?:m|classic|calculator|geometry|graphing|3d|material\/iframe\/id|material\/show\/id)\/|id\/)([a-zA-Z0-9]+)/i
+    );
+    if (match && match[1]) {
+      materialId = match[1];
+    } else {
+      // Check if raw alphanumeric 8-char material id was pasted directly
+      const rawIdMatch = str.match(/^[a-zA-Z0-9]{6,12}$/);
+      if (rawIdMatch) {
+        materialId = rawIdMatch[0];
+      }
     }
   }
 
-  return target.startsWith('http') ? target : `https://${target}`;
+  if (!materialId) return null;
+
+  // Use standard wide 16:10 dimensions (960x600) as default if none specified.
+  // This provides ample horizontal canvas space so wide graphs/controls don't get truncated.
+  const finalWidth = width && width >= 400 && width <= 2400 ? width : 960;
+  const finalHeight = height && height >= 300 && height <= 1600 ? height : 600;
+
+  return {
+    materialId,
+    width: finalWidth,
+    height: finalHeight,
+  };
+}
+
+/**
+ * Returns a fully optimized GeoGebra embed URL ensuring:
+ * - Dynamic width/height configured so GeoGebra does not clip the right side
+ * - Zoom controls (+/-) enabled (szb=true) so students can zoom in/out
+ * - Shift-drag pan & zoom enabled (sdz=true)
+ * - Fullscreen button enabled (sfsb=true)
+ * - Reset view button enabled (sri=true)
+ * - Distracting author menus hidden (smb=false, stb=false)
+ */
+export function parseGeoGebraUrl(
+  input: string,
+  customWidth?: number,
+  customHeight?: number
+): string | null {
+  if (!input || !input.trim()) return null;
+  const params = extractGeoGebraParams(input);
+  if (!params) {
+    const str = input.trim();
+    // If it's already an iframe or full URL that couldn't be parsed, return sanitized URL
+    const iframeMatch = str.match(/src=["'](.*?)["']/);
+    const target = iframeMatch ? iframeMatch[1] : str;
+    return target.startsWith('http') ? target : `https://${target}`;
+  }
+
+  const w = customWidth || params.width;
+  const h = customHeight || params.height;
+
+  return `https://www.geogebra.org/material/iframe/id/${params.materialId}/width/${w}/height/${h}/rc/false/ai/false/sri/true/szb/true/sfsb/true/smb/false/stb/false/stbh/false/ld/false/sdz/true`;
+}
+
+/**
+ * Returns aspect ratio and dimensions for rendering the container accurately.
+ */
+export function getGeoGebraDimensions(input: string): {
+  width: number;
+  height: number;
+  aspectRatio: string;
+} {
+  const params = extractGeoGebraParams(input);
+  const width = params?.width || 960;
+  const height = params?.height || 600;
+  return {
+    width,
+    height,
+    aspectRatio: `${width} / ${height}`,
+  };
 }
 
 export function parseH5PUrl(input: string): string | null {
