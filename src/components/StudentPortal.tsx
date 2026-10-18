@@ -221,19 +221,19 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-xl w-full mx-auto px-4 py-8 sm:py-12 flex flex-col justify-center">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6 text-center">
+      {/* Main Container - Optimized for Smartphone, Tablet, and Desktop PC */}
+      <main className="flex-1 max-w-xl md:max-w-2xl lg:max-w-3xl w-full mx-auto px-4 py-8 sm:py-12 flex flex-col justify-center">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 sm:p-8 lg:p-10 space-y-6 text-center">
           {/* Header Icon */}
-          <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 mx-auto flex items-center justify-center shadow-xs">
-            <BookOpen className="w-8 h-8" />
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 mx-auto flex items-center justify-center shadow-xs">
+            <BookOpen className="w-8 h-8 sm:w-10 sm:h-10" />
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
               Digitale Tippkarten
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+            <p className="text-xs sm:text-sm lg:text-base text-slate-500 dark:text-slate-400 max-w-lg mx-auto leading-relaxed">
               Scanne den QR-Code auf deinem Arbeitsblatt mit der Smartphone-Kamera oder gib den Lernhilfe-Code (steht auf dem Arbeitsblatt unter dem QR-Code) ein.
             </p>
           </div>
@@ -241,16 +241,16 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
           {/* Form for manual code entry */}
           <form onSubmit={handleCodeSubmit} className="space-y-3 pt-2 text-left">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+              <label className="block text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-300">
                 Lernhilfe-Code (Zahlen) oder Aufgabennamen eingeben:
               </label>
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">
+              <span className="text-[11px] sm:text-xs text-slate-400 dark:text-slate-500 block mt-0.5">
                 Der Zahlencode steht auf dem Arbeitsblatt direkt unter dem QR-Code (z. B. <span className="font-mono text-indigo-600 dark:text-indigo-400 font-bold">{items[0]?.id || '482105'}</span>)
               </span>
             </div>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-col sm:flex-row gap-2.5">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="w-4 h-4 sm:w-5 sm:h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   inputMode="text"
@@ -261,12 +261,12 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
                     if (multipleMatches.length > 0) setMultipleMatches([]);
                   }}
                   placeholder="Zahlencode eingeben (z. B. 482105) oder Aufgabentitel..."
-                  className="w-full pl-9 pr-3.5 py-3 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 font-medium"
+                  className="w-full pl-10 pr-3.5 py-3 sm:py-3.5 text-sm sm:text-base bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:focus:ring-indigo-400 font-medium"
                 />
               </div>
               <button
                 type="submit"
-                className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-sm font-semibold rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all shrink-0"
+                className="px-6 py-3 sm:py-3.5 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-sm sm:text-base font-semibold rounded-xl shadow-xs flex items-center justify-center gap-2 transition-all shrink-0"
               >
                 <span>Tipps öffnen</span>
                 <ArrowRight className="w-4 h-4" />
@@ -275,17 +275,17 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
 
             {/* List of multiple matching tasks (e.g. from an Arbeitsblatt) */}
             {multipleMatches.length > 0 && (
-              <div className="p-3 bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl space-y-2 animate-in fade-in">
-                <span className="text-xs font-bold text-purple-900 dark:text-purple-300 block">
+              <div className="p-3.5 sm:p-4 bg-purple-50/80 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl space-y-2.5 animate-in fade-in">
+                <span className="text-xs sm:text-sm font-bold text-purple-900 dark:text-purple-300 block">
                   Mehrere passende Aufgaben gefunden ({multipleMatches.length}). Wähle deine Aufgabe:
                 </span>
-                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto">
                   {multipleMatches.map((match) => (
                     <button
                       key={match.id}
                       type="button"
                       onClick={() => onOpenItem(match.id)}
-                      className="w-full p-2.5 bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-800/60 hover:border-purple-400 rounded-lg flex items-center justify-between text-left gap-2 transition-all hover:shadow-xs group"
+                      className="w-full p-3 bg-white dark:bg-slate-900 border border-purple-200/80 dark:border-purple-800/60 hover:border-purple-400 rounded-xl flex items-center justify-between text-left gap-2 transition-all hover:shadow-xs group"
                     >
                       <div className="min-w-0 flex-1">
                         {match.group_name && (
