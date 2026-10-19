@@ -325,31 +325,42 @@ export async function extractTaskTextFromImage(
   let serverErrorMessage: string | null = null;
 
   // 1. Primary: Use the built-in server-side Gemini AI engine (free & included out-of-the-box)
-  try {
-    const serverRes = await fetch('/api/gemini/extract-task-text', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        imageDataUrl: imageBlobOrDataUrl,
-      }),
-    });
+  const candidateEndpoints = [
+    '/api/gemini/extract-task-text',
+    '/api/extract-task-text',
+    '/api/ocr',
+  ];
 
-    if (serverRes.ok) {
-      const json = await serverRes.json();
-      if (json && typeof json.extractedText === 'string' && json.extractedText.trim().length > 0) {
-        return {
-          extractedText: json.extractedText.trim(),
-          suggestedTitle: json.suggestedTitle?.trim() || undefined,
-          detectedSubject: json.detectedSubject?.trim() || undefined,
-        };
+  for (const endpoint of candidateEndpoints) {
+    try {
+      const serverRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageDataUrl: imageBlobOrDataUrl,
+        }),
+      });
+
+      if (serverRes.ok) {
+        const json = await serverRes.json();
+        if (json && typeof json.extractedText === 'string' && json.extractedText.trim().length > 0) {
+          return {
+            extractedText: json.extractedText.trim(),
+            suggestedTitle: json.suggestedTitle?.trim() || undefined,
+            detectedSubject: json.detectedSubject?.trim() || undefined,
+          };
+        }
+      } else if (serverRes.status !== 404) {
+        // If it's a specific non-404 error (e.g. 400 bad image or 422 unreadable)
+        const errJson = await serverRes.json().catch(() => ({}));
+        serverErrorMessage = errJson?.error || `Server meldete Status ${serverRes.status}`;
+        break; // Don't try other endpoints if the server actually handled the request and gave a valid error
+      } else {
+        serverErrorMessage = 'Server meldete Status 404';
       }
-    } else {
-      const errJson = await serverRes.json().catch(() => ({}));
-      serverErrorMessage = errJson?.error || `Server meldete Status ${serverRes.status}`;
+    } catch (err: any) {
+      serverErrorMessage = err?.message || 'Verbindung zum KI-Server fehlgeschlagen';
     }
-  } catch (err: any) {
-    serverErrorMessage = err?.message || 'Verbindung zum KI-Server fehlgeschlagen';
-    console.warn('Server OCR request error:', err);
   }
 
   // 2. Optional secondary client-side fallback if user configured their own custom key

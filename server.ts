@@ -10,7 +10,7 @@ dotenv.config();
 process.env.DISABLE_HMR = 'true';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
@@ -176,7 +176,7 @@ async function generateGeminiContentWithFallback(params: {
 }
 
 // Server-side AI Hints Generation API Endpoint
-app.post('/api/gemini/generate-hints', async (req, res) => {
+app.post(['/api/gemini/generate-hints', '/api/gemini/generate-hints/', '/api/generate-hints', '/api/generate-hints/'], async (req, res) => {
   try {
     const { taskTitle, taskContext, imageDataUrl } = req.body;
 
@@ -252,7 +252,24 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
 });
 
 // Server-side AI Task & Math Formula OCR Extraction Endpoint
-app.post('/api/gemini/extract-task-text', async (req, res) => {
+const ocrRoutePaths = [
+  '/api/gemini/extract-task-text',
+  '/api/gemini/extract-task-text/',
+  '/api/extract-task-text',
+  '/api/extract-task-text/',
+  '/api/gemini/ocr',
+  '/api/gemini/ocr/',
+  '/api/ocr',
+  '/api/ocr/',
+  '/api/extract-text',
+  '/api/extract-text/',
+];
+
+app.get(ocrRoutePaths, (_req, res) => {
+  res.json({ ok: true, endpoint: 'ocr', method: 'POST', body: '{ imageDataUrl }' });
+});
+
+app.post(ocrRoutePaths, async (req, res) => {
   try {
     const { imageDataUrl } = req.body;
 
@@ -999,9 +1016,10 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
     app.get('*', (_req, res) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.resolve(distPath, 'index.html'));
     });
   }
 
