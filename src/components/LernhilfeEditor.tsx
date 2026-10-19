@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Lernhilfe, Hint, MediaType, DisclosureMode } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import {
@@ -128,12 +128,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSuccess, setExtractSuccess] = useState<string | null>(null);
   const [autoExtractOnUpload, setAutoExtractOnUpload] = useState<boolean>(false);
+  const lastLocalDataUrlRef = useRef<string | null>(null);
 
   // Extract task text and math formulas from image
   const handleExtractText = async (imageToUse?: string) => {
-    const img = imageToUse || taskImage;
+    const img = imageToUse || lastLocalDataUrlRef.current || taskImage;
     if (!img) {
-      setExtractError('Bitte wähle zuerst ein Aufgaben-Foto aus oder nimm eines mit der Smartphone-Kamera auf.');
+      setExtractError('Bitte wähle zuerst ein Aufgaben-Foto oder Screenshot aus oder füge ihn per Strg+V ein.');
       return;
     }
 
@@ -143,8 +144,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
     try {
       const data = await extractTaskTextFromImage(img);
-      if (!data.extractedText) {
-        throw new Error('Es konnte kein Text auf dem Foto erkannt werden. Bitte stelle sicher, dass die Aufgabe gut beleuchtet und lesbar ist.');
+      if (!data.extractedText || data.extractedText.trim().length === 0) {
+        throw new Error('Es konnte kein Text auf dem Bild erkannt werden. Bitte stelle sicher, dass die Aufgabe scharf und gut lesbar ist.');
       }
 
       // Append or set recognized text
@@ -178,7 +179,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         }
       }
 
-      setExtractSuccess('Aufgabentext & mathematische Formeln erfolgreich aus dem Foto verschriftlicht!');
+      setExtractSuccess('Aufgabentext & Formeln erfolgreich aus dem Bild verschriftlicht!');
     } catch (err: any) {
       setExtractError(err.message || 'Fehler beim Extrahieren des Aufgabentexts.');
     } finally {
@@ -186,13 +187,14 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     }
   };
 
-  // Handle Task Image Upload with Canvas compression
+  // Handle Task Image Upload with Canvas compression (1600x1600, 0.88 for ultra-sharp math symbols)
   const handleTaskImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
-      const compressed = await compressImage(file, 1200, 1200, 0.82);
+      const compressed = await compressImage(file, 1600, 1600, 0.88);
+      lastLocalDataUrlRef.current = compressed.dataUrl;
       let targetUrl = compressed.dataUrl;
 
       // Attempt upload to Supabase Storage if available
@@ -205,10 +207,41 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
       setTaskImage(targetUrl);
       if (autoExtractOnUpload) {
-        handleExtractText(targetUrl);
+        handleExtractText(compressed.dataUrl);
       }
     } catch (err: any) {
       alert('Bild konnte nicht verarbeitet werden: ' + err.message);
+    }
+  };
+
+  // Handle screenshot pasted directly from clipboard (e.g. Snipping Tool, Screenshot, Ctrl+V)
+  const handlePasteImage = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          try {
+            const compressed = await compressImage(file, 1600, 1600, 0.88);
+            lastLocalDataUrlRef.current = compressed.dataUrl;
+            let targetUrl = compressed.dataUrl;
+            try {
+              const cloudUrl = await uploadMediaToSupabase(compressed.blob, `task_pasted_${Date.now()}.jpg`);
+              if (cloudUrl) targetUrl = cloudUrl;
+            } catch {
+              // Ignore upload error, use dataUrl
+            }
+            setTaskImage(targetUrl);
+            setExtractSuccess('Screenshot aus Zwischenablage eingefügt! KI liest Text...');
+            handleExtractText(compressed.dataUrl);
+          } catch (err: any) {
+            setExtractError('Screenshot konnte nicht verarbeitet werden: ' + err.message);
+          }
+          break;
+        }
+      }
     }
   };
 
@@ -813,6 +846,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             <textarea
               rows={Math.max(3, (taskContext || '').split('\n').length + Math.ceil((taskContext || '').length / 60))}
               value={taskContext}
+              onPaste={handlePasteImage}
               onChange={(e) => {
                 setTaskContext(e.target.value);
                 e.target.style.height = 'auto';
@@ -829,7 +863,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   el.style.height = `${Math.max(88, el.scrollHeight)}px`;
                 }
               }}
-              placeholder="Hier den Aufgabentext eintragen (vollständig optional! Mathe-Formeln in $formel$ unterstützt, oder oben mit KI aus dem Foto extrahieren)..."
+              placeholder="Hier den Aufgabentext eintragen (oder Foto aufnehmen / Screenshot per Strg+V einfügen, um Text & Formeln automatisch zu extrahieren)..."
               className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed overflow-hidden transition-[height] duration-75"
               style={{ minHeight: '88px', overflowY: 'hidden' }}
             />
@@ -889,7 +923,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             <div className="space-y-2 pt-1">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                 <span className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                  Foto der Aufgabe / Schulbuchseite (optional):
+                  Foto oder Screenshot der Aufgabe (optional):
                 </span>
                 <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
                   <input
@@ -920,7 +954,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 {/* 2. Pick from File / Gallery */}
                 <label className="flex items-center justify-center gap-2 px-4 py-3 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-xs sm:text-sm font-semibold border border-slate-300 dark:border-slate-700 cursor-pointer transition min-h-[46px] active:scale-[0.99]">
                   <FolderOpen className="w-4 h-4 text-slate-400" />
-                  <span>Aus Galerie / Datei wählen</span>
+                  <span>Screenshot / Datei wählen</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -929,6 +963,10 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   />
                 </label>
               </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                💡 <strong>Tipp:</strong> Screenshots können auch einfach mit <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-800 rounded text-[10px] font-mono">Strg+V</kbd> (bzw. <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-800 rounded text-[10px] font-mono">Cmd+V</kbd>) direkt aus der Zwischenablage eingefügt werden.
+              </p>
 
               {taskImage && (
                 <div className="mt-2.5 p-3 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">

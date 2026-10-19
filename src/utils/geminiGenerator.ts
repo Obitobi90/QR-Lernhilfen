@@ -212,17 +212,71 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
   };
 }
 
-function parseHintsJson(rawText: string, taskContext = '', taskTitle = ''): GeneratedHintItem[] {
-  let cleaned = rawText.trim();
-  // Strip markdown codeblock if present
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+function cleanAndParseJsonClient<T = any>(rawText: string, fallback: T): T {
+  if (!rawText || typeof rawText !== 'string') return fallback;
+
+  let s = rawText.trim();
+  if (s.startsWith('```json')) {
+    s = s.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+  } else if (s.startsWith('```')) {
+    s = s.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
   }
 
-  const parsed = JSON.parse(cleaned);
-  if (Array.isArray(parsed)) {
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    // Continue
+  }
+
+  try {
+    const fixed = s.replace(/\\(.)/g, (match, char) => {
+      if (char === 'n' || char === '"' || char === '\\') return match;
+      return '\\\\' + char;
+    });
+    return JSON.parse(fixed) as T;
+  } catch {
+    // Continue
+  }
+
+  try {
+    const fixed2 = s
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+      .replace(/\\(?![\\"/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
+    return JSON.parse(fixed2) as T;
+  } catch {
+    // Regex fallback
+  }
+
+  if (typeof fallback === 'object' && fallback !== null && !Array.isArray(fallback)) {
+    const mText =
+      s.match(/"extractedText"\s*:\s*"([\s\S]*?)"\s*,\s*"suggestedTitle"/i) ||
+      s.match(/"extractedText"\s*:\s*"([\s\S]*?)"\s*}/i);
+    const mTitle = s.match(/"suggestedTitle"\s*:\s*"([^"\n]*)"/i);
+    const mSubj = s.match(/"detectedSubject"\s*:\s*"([^"\n]*)"/i);
+
+    if (mText && mText[1]) {
+      return {
+        extractedText: mText[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+        suggestedTitle: mTitle ? mTitle[1] : undefined,
+        detectedSubject: mSubj ? mSubj[1] : undefined,
+      } as unknown as T;
+    }
+
+    if (s.length > 5 && !s.startsWith('{') && !s.startsWith('[')) {
+      return {
+        extractedText: s,
+        suggestedTitle: 'Aufgabe aus Foto',
+        detectedSubject: 'Mathematik',
+      } as unknown as T;
+    }
+  }
+
+  return fallback;
+}
+
+function parseHintsJson(rawText: string, taskContext = '', taskTitle = ''): GeneratedHintItem[] {
+  const parsed = cleanAndParseJsonClient<any[]>(rawText, []);
+  if (Array.isArray(parsed) && parsed.length > 0) {
     const validMedia = ['none', 'image', 'audio', 'youtube', 'geogebra', 'h5p'];
     return parsed.map((item, idx) => {
       // Clean any accidental "Tipp 1:" prefix from titles so it's never duplicated
@@ -252,7 +306,7 @@ function parseHintsJson(rawText: string, taskContext = '', taskTitle = ''): Gene
       };
     });
   }
-  throw new Error('Ungültiges Antwortformat der KI.');
+  return generateMathPedagogicalHints(taskContext, taskTitle);
 }
 
 export interface ExtractedTaskData {
@@ -268,7 +322,9 @@ export interface ExtractedTaskData {
 export async function extractTaskTextFromImage(
   imageBlobOrDataUrl: string
 ): Promise<ExtractedTaskData> {
-  // 1. Primary: Use the server-side Gemini AI engine (free & included out-of-the-box)
+  let serverErrorMessage: string | null = null;
+
+  // 1. Primary: Use the built-in server-side Gemini AI engine (free & included out-of-the-box)
   try {
     const serverRes = await fetch('/api/gemini/extract-task-text', {
       method: 'POST',
@@ -280,7 +336,7 @@ export async function extractTaskTextFromImage(
 
     if (serverRes.ok) {
       const json = await serverRes.json();
-      if (json && typeof json.extractedText === 'string') {
+      if (json && typeof json.extractedText === 'string' && json.extractedText.trim().length > 0) {
         return {
           extractedText: json.extractedText.trim(),
           suggestedTitle: json.suggestedTitle?.trim() || undefined,
@@ -289,34 +345,38 @@ export async function extractTaskTextFromImage(
       }
     } else {
       const errJson = await serverRes.json().catch(() => ({}));
-      if (errJson?.error) {
-        throw new Error(errJson.error);
-      }
+      serverErrorMessage = errJson?.error || `Server meldete Status ${serverRes.status}`;
     }
   } catch (err: any) {
-    // If the server failed with a specific meaningful error, rethrow it
-    if (err.message && !err.message.includes('fetch')) {
-      throw err;
-    }
-    console.warn('Server OCR failed, checking for client fallback...', err);
+    serverErrorMessage = err?.message || 'Verbindung zum KI-Server fehlgeschlagen';
+    console.warn('Server OCR request error:', err);
   }
 
-  // 2. Optional secondary client-side fallback if user configured their own key
+  // 2. Optional secondary client-side fallback if user configured their own custom key
   const userApiKey = getStoredGeminiKey();
   if (userApiKey) {
-    const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (match) {
-      const mimeType = match[1];
-      const base64Data = match[2];
+    try {
+      const trimmed = imageBlobOrDataUrl.trim();
+      let mimeType = 'image/jpeg';
+      let base64Data = '';
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
+      if (trimmed.startsWith('data:')) {
+        const commaIdx = trimmed.indexOf(',');
+        if (commaIdx !== -1) {
+          const meta = trimmed.substring(5, commaIdx);
+          base64Data = trimmed.substring(commaIdx + 1).replace(/\s/g, '');
+          const m = meta.match(/^([a-zA-Z0-9.+/-]+)/);
+          if (m && m[1]) mimeType = m[1];
+        }
+      }
 
-      const promptText = `Du bist ein Experte für mathematische und naturwissenschaftliche Texterkennung (OCR).
-Deine Aufgabe ist es, aus dem beigefügten Foto eines Schulbuchs, Arbeitsblatts oder einer handschriftlichen Aufgabe:
-1. Den Aufgabentext exakt und vollständig abzuschreiben.
-2. Alle mathematischen Ausdrücke, Gleichungen, Brüche, Wurzeln und Potenzen sauber in LaTeX zu formatieren ($...$ inline oder $$...$$ für abgesetzte Formeln).
-3. Einen treffenden kurzen Aufgabentitel vorzuschlagen.
-4. Das Schulfach zu erkennen (Mathematik, Physik, Chemie, Biologie oder Sonstiges).
+      if (base64Data) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
+
+        const promptText = `Du bist ein hochpräziser Experte für mathematische und naturwissenschaftliche Texterkennung (OCR).
+Transkribiere die Aufgabe aus dem beigefügten Bild exakt, vollständig und auf Deutsch.
+Formatiere alle mathematischen Formeln, Brüche, Wurzeln und Potenzen sauber in LaTeX ($...$ oder $$...$$).
+WICHTIG: Maskiere in JSON alle Backslashes doppelt (\\\\frac, \\\\sqrt, \\\\text, \\\\alpha).
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
 {
@@ -325,54 +385,58 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
   "detectedSubject": "Mathematik"
 }`;
 
-      const requestBody = {
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              {
-                inlineData: {
-                  mimeType,
-                  data: base64Data,
+        const requestBody = {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data,
+                  },
                 },
-              },
-              {
-                text: promptText,
-              },
-            ],
+                {
+                  text: promptText,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1,
           },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      };
+        };
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawText) {
-          let cleaned = rawText.trim();
-          if (cleaned.startsWith('```json')) {
-            cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-          } else if (cleaned.startsWith('```')) {
-            cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+        if (res.ok) {
+          const data = await res.json();
+          const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText) {
+            const parsed = cleanAndParseJsonClient<any>(rawText, {});
+            if (parsed.extractedText && parsed.extractedText.trim().length > 0) {
+              return {
+                extractedText: parsed.extractedText.trim(),
+                suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
+                detectedSubject: parsed.detectedSubject?.trim() || undefined,
+              };
+            }
           }
-          const parsed = JSON.parse(cleaned);
-          return {
-            extractedText: parsed.extractedText || '',
-            suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
-            detectedSubject: parsed.detectedSubject?.trim() || undefined,
-          };
         }
       }
+    } catch (clientErr) {
+      console.warn('Client-side Gemini OCR also failed:', clientErr);
     }
+  }
+
+  // If server had a specific error message, report it clearly
+  if (serverErrorMessage) {
+    throw new Error(`Texterkennung nicht möglich: ${serverErrorMessage}`);
   }
 
   throw new Error(

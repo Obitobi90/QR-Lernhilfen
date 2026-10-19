@@ -12,7 +12,19 @@ process.env.DISABLE_HMR = 'true';
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// CORS headers for local network / cross-origin preview support
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 // Shared Gemini Client
 const ai = new GoogleGenAI({
@@ -28,19 +40,27 @@ const ai = new GoogleGenAI({
 async function getImagePart(imageDataUrlOrUrl: string | undefined): Promise<{ mimeType: string; data: string } | null> {
   if (!imageDataUrlOrUrl || typeof imageDataUrlOrUrl !== 'string') return null;
 
-  // 1. Base64 Data URL
-  const match = imageDataUrlOrUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (match) {
-    return {
-      mimeType: match[1],
-      data: match[2],
-    };
+  const trimmed = imageDataUrlOrUrl.trim();
+
+  // 1. Data URL (flexible regex & comma splitting to handle any MIME type or parameters)
+  if (trimmed.startsWith('data:')) {
+    const commaIndex = trimmed.indexOf(',');
+    if (commaIndex !== -1) {
+      const meta = trimmed.substring(5, commaIndex);
+      const data = trimmed.substring(commaIndex + 1).replace(/\s/g, '');
+      let mimeType = 'image/jpeg';
+      const mimeMatch = meta.match(/^([a-zA-Z0-9.+/-]+)/);
+      if (mimeMatch && mimeMatch[1] && mimeMatch[1].includes('/')) {
+        mimeType = mimeMatch[1];
+      }
+      return { mimeType, data };
+    }
   }
 
   // 2. Remote URL (e.g. Supabase Storage, CDN, public image URL)
-  if (imageDataUrlOrUrl.startsWith('http://') || imageDataUrlOrUrl.startsWith('https://')) {
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     try {
-      const res = await fetch(imageDataUrlOrUrl);
+      const res = await fetch(trimmed);
       if (!res.ok) return null;
       const arrayBuffer = await res.arrayBuffer();
       const mimeType = res.headers.get('content-type') || 'image/jpeg';
@@ -55,12 +75,85 @@ async function getImagePart(imageDataUrlOrUrl: string | undefined): Promise<{ mi
   return null;
 }
 
-// Helper to call Gemini with primary model (gemini-3.1-flash-lite) and fallback (gemini-3.8-flash)
+// Robust JSON Cleaner & Parser that safely recovers unescaped LaTeX backslashes from LLM output
+function cleanAndParseJson<T = any>(raw: string | undefined | null, fallback: T): T {
+  if (!raw || typeof raw !== 'string') return fallback;
+
+  let s = raw.trim();
+  // Strip markdown code fences
+  if (s.startsWith('```json')) {
+    s = s.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+  } else if (s.startsWith('```')) {
+    s = s.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+  }
+
+  // 1. First try standard JSON.parse
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    // Continue to repair
+  }
+
+  // 2. Repair unescaped LaTeX backslashes common in math output (e.g. \frac, \sqrt, \text, \,)
+  try {
+    const fixed = s.replace(/\\(.)/g, (match, char) => {
+      // Keep standard JSON escapes: newline \n, quote \", double backslash \\
+      if (char === 'n' || char === '"' || char === '\\') {
+        return match;
+      }
+      // Double the backslash so JSON.parse keeps it as a literal backslash for LaTeX
+      return '\\\\' + char;
+    });
+    return JSON.parse(fixed) as T;
+  } catch {
+    // Continue to next recovery level
+  }
+
+  // 3. Strip control characters that break JSON and fix remaining stray backslashes
+  try {
+    const fixed2 = s
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ')
+      .replace(/\\(?![\\"/bfnrt]|u[0-9a-fA-F]{4})/g, '\\\\');
+    return JSON.parse(fixed2) as T;
+  } catch {
+    // Continue to regex recovery
+  }
+
+  // 4. Regex extraction for OCR object
+  if (typeof fallback === 'object' && fallback !== null && !Array.isArray(fallback)) {
+    const mText =
+      s.match(/"extractedText"\s*:\s*"([\s\S]*?)"\s*,\s*"suggestedTitle"/i) ||
+      s.match(/"extractedText"\s*:\s*"([\s\S]*?)"\s*}/i);
+    const mTitle = s.match(/"suggestedTitle"\s*:\s*"([^"\n]*)"/i);
+    const mSubj = s.match(/"detectedSubject"\s*:\s*"([^"\n]*)"/i);
+
+    if (mText && mText[1]) {
+      return {
+        extractedText: mText[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+        suggestedTitle: mTitle ? mTitle[1] : undefined,
+        detectedSubject: mSubj ? mSubj[1] : undefined,
+      } as unknown as T;
+    }
+
+    // If the model simply returned the transcribed text without JSON wrapper
+    if (s.length > 5 && !s.startsWith('{') && !s.startsWith('[')) {
+      return {
+        extractedText: s,
+        suggestedTitle: 'Aufgabe aus Foto',
+        detectedSubject: 'Mathematik',
+      } as unknown as T;
+    }
+  }
+
+  return fallback;
+}
+
+// Helper to call Gemini with primary model (gemini-3.1-flash-lite) and fallbacks
 async function generateGeminiContentWithFallback(params: {
   contents: any;
   config: any;
 }) {
-  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-4-argon'];
   let lastError: any = null;
 
   for (const model of modelsToTry) {
@@ -150,15 +243,8 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
       },
     });
 
-    let cleaned = (rawText || '[]').trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-
-    const hints = JSON.parse(cleaned);
-    return res.json({ hints });
+    const hints = cleanAndParseJson<any[]>(rawText, []);
+    return res.json({ hints: Array.isArray(hints) ? hints : [] });
   } catch (error: any) {
     console.error('Error generating hints via Gemini:', error);
     return res.status(500).json({ error: error.message || 'Failed to generate hints' });
@@ -190,7 +276,7 @@ app.post('/api/gemini/extract-task-text', async (req, res) => {
     }
 
     const systemInstruction = `Du bist ein hochpräziser didaktischer Assistent für Texterkennung (OCR) und mathematische Transkription von Schulaufgaben, Arbeitsblättern und Schulbuchseiten.
-Deine Aufgabe ist es, den Aufgabentext aus dem Foto oder Scan exakt, vollständig und schülergerecht auf Deutsch zu verschriftlichen.
+Deine Aufgabe ist es, den Aufgabentext aus dem Foto oder Screenshot exakt, vollständig und schülergerecht auf Deutsch zu verschriftlichen.
 
 STRIKTE REGELN FÜR DIE TRANSKRIPTION:
 1. MATHEMATISCHE FORMELN & SYMBOLE:
@@ -205,6 +291,9 @@ STRIKTE REGELN FÜR DIE TRANSKRIPTION:
 4. METADATEN:
    - Schlage einen prägnanten, didaktischen Aufgabentitel vor (z.B. "Satz des Pythagoras: Berechnung der Hypotenuse").
    - Erkenne das Fach (z.B. Mathematik, Physik, Chemie, Biologie, Informatik, Deutsch, Englisch).
+
+WICHTIG FÜR JSON:
+Maskiere jeden Backslash für LaTeX doppelt (\\\\frac statt \\frac, \\\\sqrt statt \\sqrt, \\\\text statt \\text, \\\\alpha statt \\alpha), damit das JSON valide ist!
 
 Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im folgenden Format:
 {
@@ -234,19 +323,24 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im folgenden Format:
       },
     });
 
-    let cleaned = (rawText || '{}').trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+    const parsed = cleanAndParseJson<{
+      extractedText?: string;
+      suggestedTitle?: string;
+      detectedSubject?: string;
+    }>(rawText, {});
+
+    const extractedText = (parsed.extractedText || '').trim();
+
+    if (!extractedText) {
+      return res.status(422).json({
+        error: 'Auf dem Bild konnte kein Aufgabentext erkannt werden. Bitte stelle sicher, dass die Aufgabe scharf und gut lesbar ist.',
+      });
     }
 
-    const parsed = JSON.parse(cleaned);
-
     return res.json({
-      extractedText: parsed.extractedText || '',
-      suggestedTitle: parsed.suggestedTitle || '',
-      detectedSubject: parsed.detectedSubject || '',
+      extractedText,
+      suggestedTitle: (parsed.suggestedTitle || '').trim() || undefined,
+      detectedSubject: (parsed.detectedSubject || '').trim() || undefined,
     });
   } catch (error: any) {
     console.error('Error extracting task text via Gemini:', error);
