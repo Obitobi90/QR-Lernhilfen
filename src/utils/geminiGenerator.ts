@@ -98,15 +98,61 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
   const promptText = `Aufgabentitel: ${taskTitle || 'Aufgabe'}
 Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
 
-  // 1. If user provided a client API key in Options, call Google Gemini REST API directly:
+  // 1. Primary: Use the server-side Gemini route (included out-of-the-box, no user key needed)
+  try {
+    const serverRes = await fetch('/api/gemini/generate-hints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        taskTitle,
+        taskContext,
+        imageDataUrl: imageBlobOrDataUrl,
+      }),
+    });
+
+    if (serverRes.ok) {
+      const json = await serverRes.json();
+      if (Array.isArray(json.hints) && json.hints.length > 0) {
+        return {
+          hints: json.hints.map((h: any, idx: number) => {
+            let mediaType =
+              h.mediaType &&
+              ['none', 'image', 'audio', 'youtube', 'geogebra', 'h5p'].includes(h.mediaType)
+                ? h.mediaType
+                : 'none';
+            let mediaData =
+              h.mediaData && typeof h.mediaData === 'string' ? h.mediaData.trim() : undefined;
+            if ((mediaType === 'none' || !mediaData) && (taskContext || taskTitle)) {
+              const autoMedia = findRelevantPedagogicalMedia(taskContext, taskTitle, idx);
+              if (autoMedia) {
+                mediaType = autoMedia.mediaType;
+                mediaData = autoMedia.mediaData;
+              }
+            }
+            return {
+              title: h.title,
+              text: h.text,
+              mediaType,
+              mediaData,
+            };
+          }),
+          engineUsed: 'server_gemini',
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Server Gemini generate-hints failed, trying fallback...', err);
+  }
+
+  // 2. Secondary: If user provided a client API key in Options, call Google Gemini REST API directly:
   if (userApiKey) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(selectedModel)}:generateContent?key=${encodeURIComponent(userApiKey)}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
 
       const contentsParts: any[] = [];
 
       if (imageBlobOrDataUrl && imageBlobOrDataUrl.startsWith('data:image/')) {
-        const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
+        const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
         if (match) {
           contentsParts.push({
             inlineData: {
@@ -152,61 +198,13 @@ Aufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`;
             engineUsed: 'user_gemini',
           };
         }
-      } else {
-        console.warn('User Gemini API call failed, trying server or fallback...');
       }
     } catch (err) {
       console.warn('Error calling user Gemini API:', err);
     }
   }
 
-  // 2. Try calling server-side proxy route if server has key configured
-  try {
-    const serverRes = await fetch('/api/gemini/generate-hints', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        taskTitle,
-        taskContext,
-        imageDataUrl: imageBlobOrDataUrl,
-      }),
-    });
-
-    if (serverRes.ok) {
-      const json = await serverRes.json();
-      if (Array.isArray(json.hints) && json.hints.length > 0) {
-        return {
-          hints: json.hints.map((h: any, idx: number) => {
-            let mediaType =
-              h.mediaType &&
-              ['none', 'image', 'audio', 'youtube', 'geogebra', 'h5p'].includes(h.mediaType)
-                ? h.mediaType
-                : 'none';
-            let mediaData =
-              h.mediaData && typeof h.mediaData === 'string' ? h.mediaData.trim() : undefined;
-            if ((mediaType === 'none' || !mediaData) && (taskContext || taskTitle)) {
-              const autoMedia = findRelevantPedagogicalMedia(taskContext, taskTitle, idx);
-              if (autoMedia) {
-                mediaType = autoMedia.mediaType;
-                mediaData = autoMedia.mediaData;
-              }
-            }
-            return {
-              title: h.title,
-              text: h.text,
-              mediaType,
-              mediaData,
-            };
-          }),
-          engineUsed: 'server_gemini',
-        };
-      }
-    }
-  } catch (e) {
-    // Continue to free pedagogical AI engine
-  }
-
-  // 3. Standard Free AI Engine (Pedagogical Scaffolding Engine for all subjects)
+  // 3. Fallback: Standard Free AI Engine (Pedagogical Scaffolding Engine for all subjects)
   const freeHints = generateMathPedagogicalHints(taskContext, taskTitle);
   return {
     hints: freeHints,
@@ -270,9 +268,7 @@ export interface ExtractedTaskData {
 export async function extractTaskTextFromImage(
   imageBlobOrDataUrl: string
 ): Promise<ExtractedTaskData> {
-  const userApiKey = getStoredGeminiKey();
-
-  // 1. Try server-side proxy route first (uses server's configured GEMINI_API_KEY)
+  // 1. Primary: Use the server-side Gemini AI engine (free & included out-of-the-box)
   try {
     const serverRes = await fetch('/api/gemini/extract-task-text', {
       method: 'POST',
@@ -293,31 +289,29 @@ export async function extractTaskTextFromImage(
       }
     } else {
       const errJson = await serverRes.json().catch(() => ({}));
-      if (!userApiKey && errJson?.error) {
+      if (errJson?.error) {
         throw new Error(errJson.error);
       }
     }
   } catch (err: any) {
-    if (!userApiKey) {
-      throw new Error(
-        'Für automatische Foto-Texterkennung (OCR) kannst du unter Optionen einen Google Gemini API-Key hinterlegen. Du kannst die Aufgabe auch direkt als Text eingeben.'
-      );
+    // If the server failed with a specific meaningful error, rethrow it
+    if (err.message && !err.message.includes('fetch')) {
+      throw err;
     }
+    console.warn('Server OCR failed, checking for client fallback...', err);
   }
 
-  // 2. Fallback to client-side direct Gemini call if user provided a key
+  // 2. Optional secondary client-side fallback if user configured their own key
+  const userApiKey = getStoredGeminiKey();
   if (userApiKey) {
-    const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
-    if (!match) {
-      throw new Error('Ungültiges Bildformat für Texterkennung.');
-    }
+    const match = imageBlobOrDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (match) {
+      const mimeType = match[1];
+      const base64Data = match[2];
 
-    const mimeType = match[1];
-    const base64Data = match[2];
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${encodeURIComponent(userApiKey)}`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(userApiKey)}`;
-
-    const promptText = `Du bist ein Experte für mathematische und naturwissenschaftliche Texterkennung (OCR).
+      const promptText = `Du bist ein Experte für mathematische und naturwissenschaftliche Texterkennung (OCR).
 Deine Aufgabe ist es, aus dem beigefügten Foto eines Schulbuchs, Arbeitsblatts oder einer handschriftlichen Aufgabe:
 1. Den Aufgabentext exakt und vollständig abzuschreiben.
 2. Alle mathematischen Ausdrücke, Gleichungen, Brüche, Wurzeln und Potenzen sauber in LaTeX zu formatieren ($...$ inline oder $$...$$ für abgesetzte Formeln).
@@ -331,60 +325,57 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
   "detectedSubject": "Mathematik"
 }`;
 
-    const requestBody = {
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: base64Data,
+      const requestBody = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
               },
-            },
-            {
-              text: promptText,
-            },
-          ],
+              {
+                text: promptText,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1,
         },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1,
-      },
-    };
+      };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData?.error?.message || `Texterkennung fehlgeschlagen (Status ${res.status})`);
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText) {
+          let cleaned = rawText.trim();
+          if (cleaned.startsWith('```json')) {
+            cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
+          } else if (cleaned.startsWith('```')) {
+            cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+          }
+          const parsed = JSON.parse(cleaned);
+          return {
+            extractedText: parsed.extractedText || '',
+            suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
+            detectedSubject: parsed.detectedSubject?.trim() || undefined,
+          };
+        }
+      }
     }
-
-    const data = await res.json();
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) throw new Error('Keine Antwort von der Texterkennung erhalten.');
-
-    let cleaned = rawText.trim();
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-
-    const parsed = JSON.parse(cleaned);
-    return {
-      extractedText: parsed.extractedText || '',
-      suggestedTitle: parsed.suggestedTitle?.trim() || undefined,
-      detectedSubject: parsed.detectedSubject?.trim() || undefined,
-    };
   }
 
   throw new Error(
-    'Für automatische Foto-Texterkennung (OCR) kannst du unter Optionen einen Google Gemini API-Key hinterlegen. Du kannst die Aufgabe auch direkt als Text eingeben.'
+    'Das Foto konnte nicht automatisch analysiert werden. Bitte stelle sicher, dass die Aufgabe gut beleuchtet und lesbar ist, oder gib den Text manuell ein.'
   );
 }

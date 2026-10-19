@@ -24,6 +24,64 @@ const ai = new GoogleGenAI({
   },
 });
 
+// Helper to extract base64 data and mimeType from either a data URL or remote HTTP/HTTPS URL
+async function getImagePart(imageDataUrlOrUrl: string | undefined): Promise<{ mimeType: string; data: string } | null> {
+  if (!imageDataUrlOrUrl || typeof imageDataUrlOrUrl !== 'string') return null;
+
+  // 1. Base64 Data URL
+  const match = imageDataUrlOrUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (match) {
+    return {
+      mimeType: match[1],
+      data: match[2],
+    };
+  }
+
+  // 2. Remote URL (e.g. Supabase Storage, CDN, public image URL)
+  if (imageDataUrlOrUrl.startsWith('http://') || imageDataUrlOrUrl.startsWith('https://')) {
+    try {
+      const res = await fetch(imageDataUrlOrUrl);
+      if (!res.ok) return null;
+      const arrayBuffer = await res.arrayBuffer();
+      const mimeType = res.headers.get('content-type') || 'image/jpeg';
+      const data = Buffer.from(arrayBuffer).toString('base64');
+      return { mimeType, data };
+    } catch (e) {
+      console.warn('Failed to fetch remote image for Gemini:', e);
+      return null;
+    }
+  }
+
+  return null;
+}
+
+// Helper to call Gemini with primary model (gemini-3.1-flash-lite) and fallback (gemini-3.8-flash)
+async function generateGeminiContentWithFallback(params: {
+  contents: any;
+  config: any;
+}) {
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: params.config,
+      });
+      if (response && response.text) {
+        return response.text;
+      }
+    } catch (err: any) {
+      console.warn(`Gemini model ${model} failed, trying fallback:`, err.message || err);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Keine Antwort vom KI-Modell erhalten.');
+}
+
 // Server-side AI Hints Generation API Endpoint
 app.post('/api/gemini/generate-hints', async (req, res) => {
   try {
@@ -31,7 +89,7 @@ app.post('/api/gemini/generate-hints', async (req, res) => {
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(400).json({
-        error: 'No GEMINI_API_KEY set on server. Please configure it in Settings Secrets.',
+        error: 'Kein GEMINI_API_KEY auf dem Server konfiguriert.',
       });
     }
 
@@ -67,27 +125,24 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
   }
 ]`;
 
-    const contents: any[] = [];
+    const parts: any[] = [];
 
-    if (imageDataUrl && imageDataUrl.startsWith('data:image/')) {
-      const match = imageDataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.+)$/);
-      if (match) {
-        contents.push({
-          inlineData: {
-            mimeType: match[1],
-            data: match[2],
-          },
-        });
-      }
+    const imgPart = await getImagePart(imageDataUrl);
+    if (imgPart) {
+      parts.push({
+        inlineData: {
+          mimeType: imgPart.mimeType,
+          data: imgPart.data,
+        },
+      });
     }
 
-    contents.push({
+    parts.push({
       text: `Aufgabentitel: ${taskTitle || 'Aufgabe'}\nAufgabenstellung: ${taskContext || 'Siehe Bildaufgabe'}`,
     });
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: { parts: contents },
+    const rawText = await generateGeminiContentWithFallback({
+      contents: { parts },
       config: {
         systemInstruction,
         responseMimeType: 'application/json',
@@ -95,8 +150,7 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
       },
     });
 
-    const rawText = response.text || '[]';
-    let cleaned = rawText.trim();
+    let cleaned = (rawText || '[]').trim();
     if (cleaned.startsWith('```json')) {
       cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
     } else if (cleaned.startsWith('```')) {
@@ -118,7 +172,7 @@ app.post('/api/gemini/extract-task-text', async (req, res) => {
 
     if (!process.env.GEMINI_API_KEY) {
       return res.status(400).json({
-        error: 'Kein GEMINI_API_KEY auf dem Server hinterlegt. Bitte in den Einstellungen konfigurieren.',
+        error: 'Kein GEMINI_API_KEY auf dem Server hinterlegt.',
       });
     }
 
@@ -128,15 +182,12 @@ app.post('/api/gemini/extract-task-text', async (req, res) => {
       });
     }
 
-    const match = imageDataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-    if (!match) {
+    const imgPart = await getImagePart(imageDataUrl);
+    if (!imgPart) {
       return res.status(400).json({
-        error: 'Ungültiges Bildformat (erwartet wird ein base64-kodiertes Data-URL-Bild).',
+        error: 'Das Bild konnte nicht geladen werden. Bitte stelle sicher, dass die Datei ein gültiges Bild ist.',
       });
     }
-
-    const mimeType = match[1];
-    const base64Data = match[2];
 
     const systemInstruction = `Du bist ein hochpräziser didaktischer Assistent für Texterkennung (OCR) und mathematische Transkription von Schulaufgaben, Arbeitsblättern und Schulbuchseiten.
 Deine Aufgabe ist es, den Aufgabentext aus dem Foto oder Scan exakt, vollständig und schülergerecht auf Deutsch zu verschriftlichen.
@@ -162,14 +213,13 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im folgenden Format:
   "detectedSubject": "Mathematik"
 }`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
+    const rawText = await generateGeminiContentWithFallback({
       contents: {
         parts: [
           {
             inlineData: {
-              mimeType,
-              data: base64Data,
+              mimeType: imgPart.mimeType,
+              data: imgPart.data,
             },
           },
           {
@@ -184,8 +234,7 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im folgenden Format:
       },
     });
 
-    const rawText = response.text || '{}';
-    let cleaned = rawText.trim();
+    let cleaned = (rawText || '{}').trim();
     if (cleaned.startsWith('```json')) {
       cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
     } else if (cleaned.startsWith('```')) {

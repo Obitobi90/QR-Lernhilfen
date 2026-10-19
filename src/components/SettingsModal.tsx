@@ -1648,36 +1648,36 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
               <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl space-y-1.5">
                 <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-sm">
                   <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Kostenlose didaktische KI für alle Schulfächer ist standardmäßig aktiv</span>
+                  <span>Kostenlose Foto-Texterkennung (OCR) &amp; KI-Tippkarten sind aktiv</span>
                 </div>
                 <p className="text-xs text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                  Die Web-App generiert didaktisch gestufte Hilfen für alle Fächer <strong>sofort und völlig kostenlos ohne API-Key</strong>. Du musst keinen Key eintragen, um die KI-Tippkarten zu nutzen!
+                  Die Web-App extrahiert Aufgabentexte und Formeln aus Fotos und generiert didaktisch gestufte Hilfen <strong>sofort und völlig kostenlos ohne API-Key</strong> über das integrierte Google Gemini Modell. Du musst keinen API-Schlüssel eintragen!
                 </p>
               </div>
 
-              {/* Optional Custom Google Gemini API Key & Model */}
+              {/* Optional Custom Google Gemini API Key */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <Key className="w-4 h-4 text-purple-600" />
                   <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                    Optional: Eigener Google AI API-Key für alternative Modelle
+                    Optional: Eigener Google AI API-Key (nicht zwingend nötig)
                   </h4>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  Falls du erweiterte LLMs (z. B. Gemini 2.5 Pro für anspruchsvolle Aufgaben aller Fächer) oder automatische Bilderkennung nutzen möchtest, kannst du hier deinen eigenen Schlüssel eintragen.
+                  Nur falls du ein eigenes Google AI Studio Kontingent oder spezielle Modelle priorisieren möchtest. Standardmäßig läuft alles automatisch und kostenlos über den Server.
                 </p>
 
                 <form onSubmit={handleSaveGemini} className="space-y-3">
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                      Google AI Studio API-Key:
+                      Google AI Studio API-Key (optional):
                     </label>
                     <div className="flex items-center gap-2">
                       <input
                         type="password"
                         value={geminiKey}
                         onChange={(e) => setGeminiKey(e.target.value)}
-                        placeholder="AIzaSy... (leer lassen für kostenlose Standard-KI)"
+                        placeholder="AIzaSy... (leer lassen für integrierte Standard-KI)"
                         className="flex-1 px-3.5 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                       <button
@@ -1698,17 +1698,15 @@ CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (au
 
                   <div className="space-y-1">
                     <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                      Gewünschtes Gemini-Modell bei eigenem Key:
+                      Modell bei eigenem Key:
                     </label>
                     <select
                       value={geminiModel}
                       onChange={(e) => setGeminiModel(e.target.value)}
                       className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100"
                     >
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Empfohlen: Schnell &amp; exzellent für MINT)</option>
-                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Höchste mathematische Denkfähigkeit)</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                      <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (Empfohlen: Schnell, präzise &amp; multimodal)</option>
+                      <option value="gemini-3.8-flash">Gemini 3.8 Flash (Erweiterte Argumentation &amp; MINT)</option>
                     </select>
                   </div>
                 </form>
