@@ -349,6 +349,11 @@ export async function extractTaskTextFromImage(
             suggestedTitle: json.suggestedTitle?.trim() || undefined,
             detectedSubject: json.detectedSubject?.trim() || undefined,
           };
+        } else {
+          serverErrorMessage =
+            json?.error ||
+            'Auf dem Bild konnte kein Text erkannt werden. Bitte stelle sicher, dass die Aufgabe gut beleuchtet und lesbar ist.';
+          break;
         }
       } else if (serverRes.status !== 404) {
         // If it's a specific non-404 error (e.g. 400 bad image or 422 unreadable)

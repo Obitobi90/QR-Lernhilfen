@@ -153,7 +153,7 @@ async function generateGeminiContentWithFallback(params: {
   contents: any;
   config: any;
 }) {
-  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-4-argon'];
+  const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
   let lastError: any = null;
 
   for (const model of modelsToTry) {
