@@ -165,12 +165,25 @@ export async function performBrowserOcr(
   try {
     if (onProgress) onProgress(10, 'Initialisiere Browser-Texterkennung (Offline / Serverunabhängig)...');
 
-    // Try German language model first, with automatic fallback to English
+    // Try German language model (using same-origin assets from public/tesseract to avoid cross-origin restrictions)
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const localOptions = origin
+      ? {
+          workerPath: `${origin}/tesseract/worker.min.js`,
+          corePath: `${origin}/tesseract/tesseract-core.wasm.js`,
+          langPath: `${origin}/`,
+        }
+      : undefined;
+
     try {
-      worker = await createWorker('deu');
-    } catch (deuErr) {
-      console.warn('German tesseract worker load failed, falling back to English:', deuErr);
-      worker = await createWorker('eng');
+      worker = await createWorker('deu', 1, localOptions);
+    } catch {
+      try {
+        worker = await createWorker('deu');
+      } catch (deuErr) {
+        console.warn('German tesseract worker load failed, falling back to English:', deuErr);
+        worker = await createWorker('eng');
+      }
     }
 
     if (onProgress) onProgress(40, 'Analysiere Schriftzeichen und mathematische Symbole...');

@@ -7,10 +7,12 @@ const STORAGE_KEY_GEMINI_MODEL = 'lernhilfen_gemini_model';
 
 export function getStoredGeminiKey(): string {
   try {
-    return localStorage.getItem(STORAGE_KEY_GEMINI_KEY) || '';
+    const stored = localStorage.getItem(STORAGE_KEY_GEMINI_KEY);
+    if (stored && stored.trim().length > 0) return stored.trim();
   } catch (e) {
-    return '';
+    // ignore
   }
+  return ((import.meta as any).env?.VITE_GEMINI_API_KEY as string) || '';
 }
 
 export function saveGeminiKey(key: string): void {
@@ -370,10 +372,16 @@ export async function extractTaskTextFromImage(
           break;
         }
       } else if (serverRes.status !== 404) {
-        // If it's a specific non-404 error (e.g. 400 bad image or 422 unreadable)
         const errJson = await serverRes.json().catch(() => ({}));
+        const errText = (errJson?.error || '').toLowerCase();
+        // If the server simply lacks a GEMINI_API_KEY, don't stop with an error! Allow key-free browser OCR!
+        if (errText.includes('api_key') || errText.includes('api key') || errText.includes('schlüssel')) {
+          console.info('Server has no GEMINI_API_KEY, falling back to key-free browser OCR...');
+          serverErrorMessage = null;
+          break;
+        }
         serverErrorMessage = errJson?.error || `Server meldete Status ${serverRes.status}`;
-        break; // Don't try other endpoints if the server actually handled the request and gave a valid error
+        break;
       } else {
         serverErrorMessage = 'Server meldete Status 404';
       }
@@ -464,10 +472,11 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
     }
   }
 
-  // 3. ROBUST FALLBACK (100% Serverunabhängig):
-  // When server is unreachable (404, network error, or static hosting), run Browser OCR directly!
+  // 3. ROBUST 100% KEY-FREE FALLBACK:
+  // When server is unreachable (404, network error, static hosting, or no server key),
+  // run Browser OCR directly with ZERO API key required!
   console.info(
-    'Server-KI nicht erreichbar oder meldete Status 404. Wechsle automatisch auf serverunabhängige Browser-Texterkennung (Tesseract.js)...'
+    'Wechsle automatisch auf serverunabhängige, kostenlose Browser-Texterkennung (Tesseract.js)...'
   );
   try {
     const browserResult = await performBrowserOcr(imageBlobOrDataUrl, onProgress);
@@ -476,17 +485,10 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
     }
   } catch (browserErr: any) {
     console.warn('Browser OCR fallback failed:', browserErr);
-    if (browserErr?.message && !browserErr.message.includes('404')) {
-      throw browserErr;
-    }
   }
 
-  // If server had a specific non-404 error message, report it clearly
-  if (serverErrorMessage && serverErrorMessage !== 'Server meldete Status 404') {
-    throw new Error(`Texterkennung nicht möglich: ${serverErrorMessage}`);
-  }
-
+  // If both server and browser failed to find text
   throw new Error(
-    'Das Foto konnte nicht automatisch analysiert werden. Bitte stelle sicher, dass die Aufgabe gut beleuchtet und lesbar ist, oder gib den Text manuell ein.'
+    'Auf dem Bild konnte kein Text erkannt werden. Bitte stelle sicher, dass die Aufgabe gut beleuchtet und lesbar fotografiert ist, oder gib den Aufgabentext direkt im Textfeld ein.'
   );
 }
