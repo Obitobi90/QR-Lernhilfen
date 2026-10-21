@@ -315,13 +315,27 @@ export interface ExtractedTaskData {
   detectedSubject?: string;
 }
 
+import { performBrowserOcr } from './browserOcr';
+
 /**
  * Extracts task description and mathematical formulas from a photo/scan of an exercise or textbook page.
  * Mathematical expressions are strictly formatted in LaTeX ($...$ inline or $$...$$ block).
+ * 
+ * Supports 3 layers of resilience:
+ * 1. Built-in server-side Gemini AI engine (free & included out-of-the-box)
+ * 2. Direct client-side Gemini call (if user has custom key in settings)
+ * 3. 100% Server-Independent Browser OCR (Tesseract.js WebAssembly / Web Workers)
  */
 export async function extractTaskTextFromImage(
-  imageBlobOrDataUrl: string
+  imageBlobOrDataUrl: string,
+  forceBrowserOcr = false,
+  onProgress?: (percent: number, statusText: string) => void
 ): Promise<ExtractedTaskData> {
+  // If user explicitly requested server-independent browser OCR
+  if (forceBrowserOcr) {
+    return await performBrowserOcr(imageBlobOrDataUrl, onProgress);
+  }
+
   let serverErrorMessage: string | null = null;
 
   // 1. Primary: Use the built-in server-side Gemini AI engine (free & included out-of-the-box)
@@ -450,8 +464,25 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format:
     }
   }
 
-  // If server had a specific error message, report it clearly
-  if (serverErrorMessage) {
+  // 3. ROBUST FALLBACK (100% Serverunabhängig):
+  // When server is unreachable (404, network error, or static hosting), run Browser OCR directly!
+  console.info(
+    'Server-KI nicht erreichbar oder meldete Status 404. Wechsle automatisch auf serverunabhängige Browser-Texterkennung (Tesseract.js)...'
+  );
+  try {
+    const browserResult = await performBrowserOcr(imageBlobOrDataUrl, onProgress);
+    if (browserResult && browserResult.extractedText && browserResult.extractedText.trim().length > 0) {
+      return browserResult;
+    }
+  } catch (browserErr: any) {
+    console.warn('Browser OCR fallback failed:', browserErr);
+    if (browserErr?.message && !browserErr.message.includes('404')) {
+      throw browserErr;
+    }
+  }
+
+  // If server had a specific non-404 error message, report it clearly
+  if (serverErrorMessage && serverErrorMessage !== 'Server meldete Status 404') {
     throw new Error(`Texterkennung nicht möglich: ${serverErrorMessage}`);
   }
 

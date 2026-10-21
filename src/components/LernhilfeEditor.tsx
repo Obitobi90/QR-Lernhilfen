@@ -125,13 +125,14 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
   // AI Task & Math Text Extraction state
   const [isExtractingText, setIsExtractingText] = useState<boolean>(false);
+  const [extractStatusText, setExtractStatusText] = useState<string>('');
   const [extractError, setExtractError] = useState<string | null>(null);
   const [extractSuccess, setExtractSuccess] = useState<string | null>(null);
   const [autoExtractOnUpload, setAutoExtractOnUpload] = useState<boolean>(false);
   const lastLocalDataUrlRef = useRef<string | null>(null);
 
-  // Extract task text and math formulas from image
-  const handleExtractText = async (imageToUse?: string) => {
+  // Extract task text and math formulas from image (supports both server AI and 100% server-independent browser OCR)
+  const handleExtractText = async (imageToUse?: string, forceBrowser = false) => {
     const img = imageToUse || lastLocalDataUrlRef.current || taskImage;
     if (!img) {
       setExtractError('Bitte wähle zuerst ein Aufgaben-Foto oder Screenshot aus oder füge ihn per Strg+V ein.');
@@ -141,9 +142,16 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     setIsExtractingText(true);
     setExtractError(null);
     setExtractSuccess(null);
+    setExtractStatusText(
+      forceBrowser
+        ? 'Browser-Texterkennung aktiv (100% serverunabhängig)...'
+        : 'Analysiere Aufgabentext & Formeln...'
+    );
 
     try {
-      const data = await extractTaskTextFromImage(img);
+      const data = await extractTaskTextFromImage(img, forceBrowser, (_pct, status) => {
+        setExtractStatusText(status);
+      });
       if (!data.extractedText || data.extractedText.trim().length === 0) {
         throw new Error('Es konnte kein Text auf dem Bild erkannt werden. Bitte stelle sicher, dass die Aufgabe scharf und gut lesbar ist.');
       }
@@ -179,11 +187,16 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         }
       }
 
-      setExtractSuccess('Aufgabentext & Formeln erfolgreich aus dem Bild verschriftlicht!');
+      setExtractSuccess(
+        forceBrowser
+          ? 'Aufgabentext & Formeln erfolgreich serverunabhängig im Browser verschriftlicht!'
+          : 'Aufgabentext & Formeln erfolgreich aus dem Bild verschriftlicht!'
+      );
     } catch (err: any) {
       setExtractError(err.message || 'Fehler beim Extrahieren des Aufgabentexts.');
     } finally {
       setIsExtractingText(false);
+      setExtractStatusText('');
     }
   };
 
@@ -813,7 +826,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     ) : (
                       <>
                         <Wand2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span>Text aus Foto verschriftlichen</span>
+                        <span>Text aus Foto</span>
                       </>
                     )}
                   </button>
@@ -987,17 +1000,18 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    {/* One-click AI text & math formula extraction */}
+                    {/* Single clear extraction button with automatic fallback under the hood */}
                     <button
                       type="button"
                       disabled={isExtractingText}
                       onClick={() => handleExtractText()}
-                      className="flex-1 sm:flex-none px-3 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition"
+                      className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition"
+                      title="Extrahiert den Aufgabentext und mathematische Formeln automatisch aus dem Foto"
                     >
                       {isExtractingText ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>KI extrahiert...</span>
+                          <span>Text wird extrahiert...</span>
                         </>
                       ) : (
                         <>
