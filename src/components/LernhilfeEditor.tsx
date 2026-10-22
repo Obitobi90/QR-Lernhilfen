@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Lernhilfe, Hint, MediaType, DisclosureMode } from '../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { Lernhilfe, Hint, MediaType, DisclosureMode, QrDesignSettings } from '../types';
 import { compressImage } from '../utils/imageCompressor';
 import {
   parseYouTubeUrl,
@@ -14,6 +14,13 @@ import { uploadMediaToSupabase } from '../utils/supabaseClient';
 import { MathFormulaHelper } from './MathFormulaHelper';
 import { AudioRecorder } from './AudioRecorder';
 import { LaTeXRenderer } from '../utils/latexRenderer';
+import {
+  getEffectiveQrDesign,
+  getQrDesignSettings,
+  renderStyledQrCode,
+} from '../utils/qrCodeTheme';
+import { buildStudentUrl } from '../utils/appUrl';
+import { QrCodeDesigner } from './QrCodeDesigner';
 import {
   Plus,
   Trash2,
@@ -45,6 +52,10 @@ import {
   Sliders,
   Minus,
   ChevronsUpDown,
+  QrCode,
+  Palette,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface LernhilfeEditorProps {
@@ -122,6 +133,24 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
   const [previewTab, setPreviewTab] = useState<'editor' | 'preview'>('editor');
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState<boolean>(false);
+
+  // Individual QR Code Design state for this Lernhilfe
+  const [hasCustomQrDesign, setHasCustomQrDesign] = useState<boolean>(() => !!initialItem?.qr_design);
+  const [qrDesign, setQrDesign] = useState<QrDesignSettings>(() => getEffectiveQrDesign(initialItem));
+  const [isQrSectionOpen, setIsQrSectionOpen] = useState<boolean>(() => !!initialItem?.qr_design);
+  const previewQrCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Live render QR Preview on preview tab
+  useEffect(() => {
+    if (previewTab === 'preview' && previewQrCanvasRef.current) {
+      const studentUrl = buildStudentUrl(numericId);
+      const activeDesign = hasCustomQrDesign ? qrDesign : getQrDesignSettings();
+      renderStyledQrCode(previewQrCanvasRef.current, studentUrl, {
+        size: 240,
+        customSettings: activeDesign,
+      }).catch((e) => console.error('Preview QR render error:', e));
+    }
+  }, [previewTab, numericId, hasCustomQrDesign, qrDesign]);
 
   // AI Task & Math Text Extraction state
   const [isExtractingText, setIsExtractingText] = useState<boolean>(false);
@@ -509,6 +538,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       task_image: taskImage,
       disclosure_mode: disclosureMode,
       hints,
+      qr_design: hasCustomQrDesign ? qrDesign : undefined,
       created_at: initialItem?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -646,6 +676,42 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   )}
                 </div>
               ))}
+            </div>
+
+            {/* Live QR-Code Preview Card */}
+            <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3 text-center shadow-xs">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                  <QrCode className="w-4 h-4" />
+                  <span>Schüler-Zugang &amp; QR-Code</span>
+                </span>
+                {hasCustomQrDesign ? (
+                  <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full">
+                    Individuelles Design aktiv
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                    Globales Standard-Design
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col items-center justify-center p-2">
+                <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs inline-flex items-center justify-center">
+                  <canvas
+                    ref={previewQrCanvasRef}
+                    width={240}
+                    height={240}
+                    style={{ width: '180px', height: '180px', aspectRatio: '1 / 1', display: 'block' }}
+                    className="rounded-lg shrink-0"
+                  />
+                </div>
+              </div>
+              <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 inline-block font-mono text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                Lernhilfe-Code: {numericId}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Schüler scannen diesen QR-Code oder tippen den 6-stelligen Code auf der Startseite ein.
+              </p>
             </div>
           </div>
         </div>
@@ -1761,6 +1827,146 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               <Plus className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>Weiteren gestuften Tipp hinzufügen</span>
             </button>
+          </div>
+
+          {/* Custom QR-Code Design Card for this specific Lernhilfe */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100">
+                      QR-Code Design für diese Lernhilfe
+                    </h3>
+                    {hasCustomQrDesign ? (
+                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full">
+                        Eigenes Design aktiv
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                        Globales Standard-Design
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Wähle, ob diese Lernhilfe das globale Standard-Design oder ein eigenes individuelles QR-Code-Design nutzt.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle expand/collapse button */}
+              <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!hasCustomQrDesign) {
+                      setHasCustomQrDesign(true);
+                      setIsQrSectionOpen(true);
+                    } else {
+                      setIsQrSectionOpen(!isQrSectionOpen);
+                    }
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl border flex items-center gap-1.5 transition-colors ${
+                    hasCustomQrDesign
+                      ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <Palette className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>
+                    {hasCustomQrDesign
+                      ? isQrSectionOpen
+                        ? 'Designer schließen'
+                        : 'Design anpassen'
+                      : 'Eigenes Design festlegen'}
+                  </span>
+                  {isQrSectionOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Design Type Switcher & Full Designer */}
+            {isQrSectionOpen && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasCustomQrDesign(false);
+                    }}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                      !hasCustomQrDesign
+                        ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 ring-2 ring-indigo-500/30'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                        !hasCustomQrDesign ? 'border-indigo-600 bg-indigo-600' : 'border-slate-400'
+                      }`}
+                    >
+                      {!hasCustomQrDesign && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold">Standard-Design verwenden</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Übernimmt automatisch das in den Haupt-Einstellungen konfigurierte Design.
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHasCustomQrDesign(true);
+                    }}
+                    className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                      hasCustomQrDesign
+                        ? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-100 ring-2 ring-indigo-500/30'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full mt-0.5 border flex items-center justify-center shrink-0 ${
+                        hasCustomQrDesign ? 'border-indigo-600 bg-indigo-600' : 'border-slate-400'
+                      }`}
+                    >
+                      {hasCustomQrDesign && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold">Eigenes Design nur für diese Lernhilfe</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Rahmen, Farben &amp; Center-Logo individuell anpassen.
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Render the full interactive QrCodeDesigner if hasCustomQrDesign is enabled */}
+                {hasCustomQrDesign && (
+                  <div className="pt-2 animate-in fade-in">
+                    <QrCodeDesigner
+                      settings={qrDesign}
+                      onChange={setQrDesign}
+                      demoUrl={buildStudentUrl(numericId)}
+                      isIndividual={true}
+                      onResetToGlobalDefault={() => {
+                        const globalSettings = getQrDesignSettings();
+                        setQrDesign(globalSettings);
+                        setHasCustomQrDesign(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Sticky Mobile-Friendly Action Footer */}

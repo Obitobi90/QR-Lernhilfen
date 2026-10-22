@@ -1,46 +1,19 @@
 import QRCode from 'qrcode';
 import { convertImageToSketch, SketchStyle, hexToRgb } from './imageSketchConverter';
+import type {
+  Lernhilfe,
+  QrBorderDecoration,
+  QrCenterLogoType,
+  QrPresetId,
+  QrDesignSettings,
+} from '../types';
 
-export type QrBorderDecoration =
-  | 'none'
-  | 'corner_accents'
-  | 'school_grid'
-  | 'math_symbols'
-  | 'double_vintage'
-  | 'stamp_dots'
-  | 'sketch_doodle'
-  | 'modern_tech';
-
-export type QrCenterLogoType = 'none' | 'preset_icon' | 'sketch_drawing' | 'custom_image';
-
-export type QrPresetId =
-  | 'classic'
-  | 'indigo_modern'
-  | 'emerald_nature'
-  | 'violet_creative'
-  | 'dark_slate'
-  | 'crimson_study'
-  | 'custom_colors';
-
-export interface QrDesignSettings {
-  preset: QrPresetId;
-  name: string;
-  darkColor: string; // Foreground / QR modules hex code e.g. #0F172A
-  lightColor: string; // Background hex code e.g. #FFFFFF
-  borderDecoration: QrBorderDecoration;
-  centerLogoType: QrCenterLogoType;
-  presetIcon?: 'book' | 'math' | 'graduation';
-  rawUploadedImage?: string; // Original uploaded photo/image
-  customLogoDataUrl?: string; // Converted sketch or logo data URL
-  sketchStyle?: SketchStyle;
-  sketchStrokeColor?: string; // Hex code or empty to match darkColor
-  sketchIntensity?: number; // 1 to 5
-  badgeShape: 'circle' | 'rounded';
-  logoFit?: 'contain' | 'cover'; // Aspect-ratio preservation mode
-  logoZoom?: number; // Zoom level e.g. 0.5 to 2.2 (default 1.0 = 100%)
-  logoOffsetX?: number; // Horizontal pan offset in % (-100 to +100, default 0)
-  logoOffsetY?: number; // Vertical pan offset in % (-100 to +100, default 0)
-}
+export type {
+  QrBorderDecoration,
+  QrCenterLogoType,
+  QrPresetId,
+  QrDesignSettings,
+};
 
 
 
@@ -189,6 +162,22 @@ export function saveQrDesignSettings(settings: QrDesignSettings): void {
   } catch (e) {
     console.error('Failed to save QR design settings:', e);
   }
+}
+
+/**
+ * Returns the effective QR code design for a specific Lernhilfe.
+ * If the Lernhilfe has its own custom qr_design configured, it uses that!
+ * Otherwise, it falls back to the user's global QR design settings.
+ */
+export function getEffectiveQrDesign(lernhilfe?: Partial<Lernhilfe> | null): QrDesignSettings {
+  if (lernhilfe?.qr_design && lernhilfe.qr_design.darkColor) {
+    return {
+      ...getDefaultQrDesignSettings(),
+      ...lernhilfe.qr_design,
+      borderDecoration: lernhilfe.qr_design.borderDecoration || 'corner_accents',
+    };
+  }
+  return getQrDesignSettings();
 }
 
 /**

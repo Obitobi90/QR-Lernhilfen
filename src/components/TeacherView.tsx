@@ -306,10 +306,17 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
             <button
               type="button"
               onClick={() => onOpenQr(item)}
-              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors"
+              title={item.qr_design ? 'QR-Code anzeigen (Individuelles Design)' : 'QR-Code anzeigen'}
+              className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors relative"
             >
               <QrCode className="w-3.5 h-3.5" />
               <span>QR-Code</span>
+              {item.qr_design && (
+                <span
+                  className="w-2 h-2 rounded-full bg-indigo-500 absolute -top-0.5 -right-0.5 ring-2 ring-white dark:ring-slate-900"
+                  title="Individuelles QR-Design aktiv"
+                />
+              )}
             </button>
 
             <button

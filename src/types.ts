@@ -11,6 +11,47 @@ export interface Hint {
   mediaData?: string; // Image dataUrl/URL, audio dataUrl/URL, YouTube embed URL, GeoGebra/H5P embed URL
 }
 
+export type QrBorderDecoration =
+  | 'none'
+  | 'corner_accents'
+  | 'school_grid'
+  | 'math_symbols'
+  | 'double_vintage'
+  | 'stamp_dots'
+  | 'sketch_doodle'
+  | 'modern_tech';
+
+export type QrCenterLogoType = 'none' | 'preset_icon' | 'sketch_drawing' | 'custom_image';
+
+export type QrPresetId =
+  | 'classic'
+  | 'indigo_modern'
+  | 'emerald_nature'
+  | 'violet_creative'
+  | 'dark_slate'
+  | 'crimson_study'
+  | 'custom_colors';
+
+export interface QrDesignSettings {
+  preset: QrPresetId;
+  name: string;
+  darkColor: string;
+  lightColor: string;
+  borderDecoration: QrBorderDecoration;
+  centerLogoType: QrCenterLogoType;
+  presetIcon?: 'book' | 'math' | 'graduation';
+  rawUploadedImage?: string;
+  customLogoDataUrl?: string;
+  sketchStyle?: 'pencil' | 'ink' | 'outline' | 'charcoal';
+  sketchStrokeColor?: string;
+  sketchIntensity?: number;
+  badgeShape: 'circle' | 'rounded';
+  logoFit?: 'contain' | 'cover';
+  logoZoom?: number;
+  logoOffsetX?: number;
+  logoOffsetY?: number;
+}
+
 export interface Lernhilfe {
   id: string;
   title: string;
@@ -20,6 +61,7 @@ export interface Lernhilfe {
   task_context: string;
   task_image?: string;
   disclosure_mode?: DisclosureMode; // Gestufte Freischaltung ('stepped') oder alle Tipps direkt sichtbar ('all_visible')
+  qr_design?: QrDesignSettings; // Individuelles QR-Code Design für diese spezifische Lernhilfe
   hints: Hint[];
   created_at: string;
   updated_at: string;

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Lernhilfe } from '../types';
-import { renderStyledQrCode, getQrDesignSettings, saveQrDesignSettings, QrDesignSettings } from '../utils/qrCodeTheme';
+import { renderStyledQrCode, getQrDesignSettings, saveQrDesignSettings, getEffectiveQrDesign, QrDesignSettings } from '../utils/qrCodeTheme';
 import {
   shortenUrl,
   getCachedShortUrl,
@@ -89,11 +89,11 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
     };
   }, [studentUrl]);
 
-  const [qrDesign, setQrDesign] = useState<QrDesignSettings>(() => getQrDesignSettings());
+  const [qrDesign, setQrDesign] = useState<QrDesignSettings>(() => getEffectiveQrDesign(item));
 
   const drawQr = (overrideSettings?: QrDesignSettings, urlOverride?: string) => {
     if (canvasRef.current) {
-      const activeSettings = overrideSettings || getQrDesignSettings();
+      const activeSettings = overrideSettings || qrDesign || getEffectiveQrDesign(item);
       const targetUrl = urlOverride || studentUrl;
       renderStyledQrCode(canvasRef.current, targetUrl, { size: 300, customSettings: activeSettings }).catch((error) => {
         console.error('QR code generation error:', error);
@@ -103,13 +103,15 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
 
   const handleUpdateZoom = (newZoom: number) => {
     const clamped = Math.min(2.5, Math.max(0.5, Math.round(newZoom * 100) / 100));
-    const current = getQrDesignSettings();
+    const current = qrDesign || getEffectiveQrDesign(item);
     const updated: QrDesignSettings = {
       ...current,
       logoZoom: clamped,
     };
     setQrDesign(updated);
-    saveQrDesignSettings(updated);
+    if (!item.qr_design) {
+      saveQrDesignSettings(updated);
+    }
     drawQr(updated);
   };
 
@@ -123,24 +125,26 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
   useEffect(() => {
     drawQr();
 
-    // Listen for live QR design changes from options modal
+    // Listen for live QR design changes from options modal (only applies if this item has no custom design)
     const handleDesignChange = () => {
-      const latest = getQrDesignSettings();
-      setQrDesign(latest);
-      drawQr(latest);
+      if (!item.qr_design) {
+        const latest = getQrDesignSettings();
+        setQrDesign(latest);
+        drawQr(latest);
+      }
     };
 
     window.addEventListener('qr-design-changed', handleDesignChange);
     return () => {
       window.removeEventListener('qr-design-changed', handleDesignChange);
     };
-  }, [studentUrl]);
+  }, [studentUrl, item]);
 
   // Download high-resolution PNG with header text banner and the styled QR code
   const handleDownloadPng = () => {
     if (!canvasRef.current) return;
 
-    const qrDesign = getQrDesignSettings();
+    const activeQrDesign = qrDesign || getEffectiveQrDesign(item);
 
     // Create high-res canvas with title header for printing/downloading
     const printCanvas = document.createElement('canvas');
@@ -157,12 +161,12 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
     ctx.fillRect(0, 0, width, height);
 
     // Decorative border in the QR theme color
-    ctx.strokeStyle = qrDesign.darkColor || '#3730a3';
+    ctx.strokeStyle = activeQrDesign.darkColor || '#3730a3';
     ctx.lineWidth = 4;
     ctx.strokeRect(18, 18, width - 36, height - 36);
 
     // Header badge
-    ctx.fillStyle = qrDesign.darkColor || '#3730a3';
+    ctx.fillStyle = activeQrDesign.darkColor || '#3730a3';
     ctx.font = 'bold 18px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('DIGITALE LERNHILFE · TIPP-KARTE', width / 2, 62);
@@ -278,6 +282,12 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({
                 <span className="text-[10px] font-semibold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800 flex items-center gap-1">
                   <FileSpreadsheet className="w-3 h-3 text-purple-500" />
                   <span className="break-words">{item.group_name}</span>
+                </span>
+              )}
+              {item.qr_design && (
+                <span className="text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-indigo-500" />
+                  <span>Eigenes Design</span>
                 </span>
               )}
             </div>

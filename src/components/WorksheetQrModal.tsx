@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Lernhilfe } from '../types';
-import { renderStyledQrCode } from '../utils/qrCodeTheme';
+import { renderStyledQrCode, getEffectiveQrDesign } from '../utils/qrCodeTheme';
 import { LaTeXRenderer } from '../utils/latexRenderer';
 import {
   shortenUrlsBatch,
@@ -89,7 +89,10 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
       const canvas = canvasRefs.current[item.id];
       if (canvas) {
         const studentUrl = buildStudentUrl(item.id);
-        renderStyledQrCode(canvas, studentUrl, { size: 240 }).catch((error) => {
+        renderStyledQrCode(canvas, studentUrl, {
+          size: 240,
+          customSettings: getEffectiveQrDesign(item),
+        }).catch((error) => {
           if (error) console.error('QR code generation error:', error);
         });
       }
@@ -239,9 +242,16 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
                   {/* Card Title & Meta */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 print:text-slate-700">
-                      <span className="font-extrabold text-indigo-600 dark:text-indigo-400 print:text-black">
-                        Aufgabe {idx + 1}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400 print:text-black">
+                          Aufgabe {idx + 1}
+                        </span>
+                        {item.qr_design && (
+                          <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/60 print:hidden">
+                            Eigenes Design
+                          </span>
+                        )}
+                      </div>
                       <span className="flex items-center gap-1 text-[11px] print:text-slate-700">
                         <Layers className="w-3 h-3 text-slate-400 print:text-slate-700" />
                         <span>{item.hints.length} {item.hints.length === 1 ? 'Tipp' : 'Tipps'}</span>
