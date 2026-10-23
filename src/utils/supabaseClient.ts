@@ -273,7 +273,7 @@ export async function checkSupabaseSchemaHealth(): Promise<SchemaHealthResult> {
   // 2. Probe if non-uuid id string is accepted by upsert or if syntax error
   try {
     const testProbeId = 'schema_probe_' + Date.now();
-    const probeRes = await supabase.from('lernhilfen').upsert({ id: testProbeId, title: 'probe' });
+    const probeRes = await supabase.from('lernhilfen').upsert({ id: testProbeId, title: 'probe', hints: [] });
     if (probeRes.error) {
       if (probeRes.error.message.includes('uuid')) {
         isIdUuid = true;
@@ -520,7 +520,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
   const supabase = getSupabaseClient();
   if (settings.enabled && supabase) {
     try {
-      const payload: any = {
+      const basePayload: Record<string, any> = {
         id: updatedItem.id,
         title: updatedItem.title,
         subject: updatedItem.subject || 'Allgemein',
@@ -534,30 +534,93 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
         updated_at: updatedItem.updated_at,
       };
 
-      const { error } = await supabase.from('lernhilfen').upsert(payload);
-      if (error) {
-        console.warn('Supabase upsert status:', error);
-        let userMessage = `Cloud-Speicherung: ${error.message}`;
-        if (error.code === 'PGRST204' || error.message.includes('column')) {
-          userMessage = `Achtung: Spalten in Supabase-Tabelle 'lernhilfen' fehlen! Bitte im SQL-Editor ausführen. (${error.message})`;
-        } else if (error.message.includes('uuid')) {
-          userMessage = `Achtung: Spalte 'id' in Supabase ist als UUID angelegt! Bitte im SQL-Editor zu TEXT ändern.`;
-        } else if (error.code === '42501' || error.message.includes('policy')) {
-          userMessage = `Lernhilfe lokal & auf dem Server gesichert. (Supabase Cloud-Projekt ist schreibgeschützt / RLS 42501)`;
+      const activePayload: Record<string, any> = { ...basePayload };
+      const strippedColumns: string[] = [];
+      let upsertError: any = null;
+      let upsertSuccess = false;
+
+      // Adaptive retry loop: If older Supabase schema misses newer columns (e.g. disclosure_mode, qr_design, task_image, group_name),
+      // we extract the missing column from the error message, drop it from the payload, and retry so saving always succeeds without error!
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { error } = await supabase.from('lernhilfen').upsert(activePayload);
+        if (!error) {
+          upsertSuccess = true;
+          upsertError = null;
+          break;
         }
+
+        upsertError = error;
+
+        // Check if error is due to a missing column in PostgREST schema cache or Postgres
+        // PostgREST pattern: "Could not find the 'xyz' column of 'lernhilfen' in the schema cache"
+        // Postgres error: 'column "xyz" of relation "lernhilfen" does not exist'
+        const colMatch =
+          error.message?.match(/Could not find the '([^']+)' column/i) ||
+          error.message?.match(/column '([^']+)' of/i) ||
+          error.message?.match(/column "([^"]+)" does not exist/i);
+
+        const detectedCol = colMatch ? colMatch[1] : null;
+
+        if (detectedCol && detectedCol in activePayload) {
+          strippedColumns.push(detectedCol);
+          delete activePayload[detectedCol];
+          continue; // retry immediately without this column
+        }
+
+        // If specific column name wasn't parsed but code is PGRST204 or message mentions column:
+        if (error.code === 'PGRST204' || (error.message && error.message.toLowerCase().includes('column'))) {
+          const fallbackCandidates = ['disclosure_mode', 'qr_design', 'task_image', 'group_name', 'grade_level'];
+          let dropped = false;
+          for (const cand of fallbackCandidates) {
+            if (cand in activePayload && !strippedColumns.includes(cand)) {
+              strippedColumns.push(cand);
+              delete activePayload[cand];
+              dropped = true;
+              break;
+            }
+          }
+          if (dropped) continue;
+        }
+
+        // Other non-column errors (e.g. RLS or network), stop retrying
+        break;
+      }
+
+      if (upsertSuccess) {
+        if (strippedColumns.length > 0) {
+          // Saving succeeded! Notify peacefully that core data was saved in Cloud
+          window.dispatchEvent(
+            new CustomEvent('cloud-sync-success', {
+              detail: {
+                message: `In Supabase Cloud gesichert (Spalten [${strippedColumns.join(', ')}] in Supabase noch nicht vorhanden – SQL-Befehl in Einstellungen verfügbar).`,
+              },
+            })
+          );
+        } else {
+          window.dispatchEvent(
+            new CustomEvent('cloud-sync-success', {
+              detail: {
+                message: 'Erfolgreich mit Supabase Cloud synchronisiert.',
+              },
+            })
+          );
+        }
+      } else if (upsertError) {
+        console.warn('Supabase upsert status:', upsertError);
+        let userMessage = `Cloud-Speicherung: ${upsertError.message}`;
+        if (upsertError.code === 'PGRST204' || upsertError.message?.includes('column')) {
+          userMessage = `Lokal & auf Server gesichert. Supabase-Tabelle benötigt Spalten-Update (${upsertError.message})`;
+        } else if (upsertError.message?.includes('uuid')) {
+          userMessage = `Lokal & auf Server gesichert. (Spalte 'id' in Supabase ist als UUID angelegt; bitte im SQL-Editor zu TEXT ändern).`;
+        } else if (upsertError.code === '42501' || upsertError.message?.includes('policy')) {
+          userMessage = `Lokal & auf Server gesichert. (Supabase Cloud-Projekt ist schreibgeschützt / RLS 42501)`;
+        }
+
         window.dispatchEvent(
           new CustomEvent('cloud-sync-error', {
             detail: {
               message: userMessage,
-              rawError: error,
-            },
-          })
-        );
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('cloud-sync-success', {
-            detail: {
-              message: 'Erfolgreich mit Supabase Cloud synchronisiert.',
+              rawError: upsertError,
             },
           })
         );

@@ -166,6 +166,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
   const [authLoading, setAuthLoading] = useState<boolean>(false);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState<boolean>(false);
+  const [copiedQuickSql, setCopiedQuickSql] = useState<boolean>(false);
 
   useEffect(() => {
     setTeacherPinState(getTeacherPin());
@@ -556,11 +557,27 @@ CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WI
 
 -- Storage Bucket anlegen (in Supabase Storage): 'lernhilfen-media' mit Public Access`;
 
+  const quickColumnMigrationSql = `-- Fehlende Spalten in bestehender Tabelle 'lernhilfen' nachrüsten:
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFAULT 'stepped';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS group_name TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;`;
+
   const copySqlToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(sqlSchemaSnippet);
       setCopiedSql(true);
       setTimeout(() => setCopiedSql(false), 2000);
+    } catch (e) {
+      // fallback
+    }
+  };
+
+  const copyQuickSqlToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(quickColumnMigrationSql);
+      setCopiedQuickSql(true);
+      setTimeout(() => setCopiedQuickSql(false), 2000);
     } catch (e) {
       // fallback
     }
@@ -1838,10 +1855,43 @@ CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WI
                   </div>
                 )}
 
+                {/* Quick Migration for Missing Columns */}
+                <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 rounded-xl space-y-2 text-xs">
+                  <div className="flex items-center justify-between font-semibold text-indigo-950 dark:text-indigo-200">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      <span>Schnell-Upgrade für Spalten (z. B. disclosure_mode):</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={copyQuickSqlToClipboard}
+                      className="px-2.5 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1 font-bold shadow-xs transition-colors shrink-0"
+                    >
+                      {copiedQuickSql ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-300" />
+                          <span>Kopiert!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Spalten-SQL kopieren</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                    Falls PostgREST meldet, dass Spalten wie <code className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">disclosure_mode</code> fehlen: Diesen kurzen 4-Zeiler im Supabase SQL-Editor einfügen &amp; auf <strong>RUN</strong> klicken.
+                  </p>
+                  <pre className="p-2 bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-lg font-mono text-[10px] overflow-x-auto text-indigo-950 dark:text-indigo-300">
+                    {quickColumnMigrationSql}
+                  </pre>
+                </div>
+
                 {/* SQL Table Creation Accordion */}
                 <div className="p-3 bg-slate-100 dark:bg-slate-800/60 rounded-xl space-y-2 text-xs">
                   <div className="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-300">
-                    <span>SQL-Schema für Tabelle `lernhilfen`:</span>
+                    <span>Vollständiges Schema für Tabelle `lernhilfen`:</span>
                     <button
                       type="button"
                       onClick={copySqlToClipboard}
@@ -1855,7 +1905,7 @@ CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WI
                       ) : (
                         <>
                           <Copy className="w-3 h-3" />
-                          <span>SQL kopieren</span>
+                          <span>Gesamtes SQL kopieren</span>
                         </>
                       )}
                     </button>
