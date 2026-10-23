@@ -28,6 +28,8 @@ import {
   Unlink,
   RotateCcw,
   RefreshCw,
+  Smartphone,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 interface TeacherViewProps {
@@ -47,6 +49,7 @@ interface TeacherViewProps {
   isSupabaseEnabled: boolean;
   onSync?: () => void;
   isSyncing?: boolean;
+  onOpenTransfer?: () => void;
 }
 
 export const TeacherView: React.FC<TeacherViewProps> = ({
@@ -66,6 +69,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   isSupabaseEnabled,
   onSync,
   isSyncing = false,
+  onOpenTransfer,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('Alle');
@@ -410,6 +414,18 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Synchronisiere...' : 'Cloud synchronisieren'}</span>
+            </button>
+          )}
+
+          {onOpenTransfer && (
+            <button
+              type="button"
+              onClick={onOpenTransfer}
+              title="Lernhilfen per QR-Code auf Smartphone übertragen oder Backup erstellen"
+              className="px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Geräte übertragen &amp; Backup</span>
             </button>
           )}
 

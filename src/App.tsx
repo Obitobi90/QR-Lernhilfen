@@ -7,6 +7,7 @@ import {
   deleteLernhilfe,
   getSupabaseSettings,
   getSupabaseClient,
+  subscribeToSyncChanges,
 } from './utils/supabaseClient';
 
 import { generateNumericLernhilfeId } from './utils/idGenerator';
@@ -18,6 +19,7 @@ import { QrCodeModal } from './components/QrCodeModal';
 import { WorksheetQrModal } from './components/WorksheetQrModal';
 import { StatsModal } from './components/StatsModal';
 import { SettingsModal } from './components/SettingsModal';
+import { TransferModal } from './components/TransferModal';
 import {
   isTeacherSessionActive,
   setTeacherSessionActive,
@@ -31,6 +33,7 @@ import {
   Cloud,
   HardDrive,
   RefreshCw,
+  Smartphone,
   Lock,
   Check,
   AlertTriangle,
@@ -69,6 +72,7 @@ export default function App() {
   } | null>(null);
   const [statsModalItem, setStatsModalItem] = useState<Lernhilfe | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isTransferOpen, setIsTransferOpen] = useState<boolean>(false);
   const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(() => {
     const sb = getSupabaseSettings();
     return sb.enabled && !!sb.url && !!sb.anonKey;
@@ -136,12 +140,63 @@ export default function App() {
     } catch (e) {}
   }, [darkMode]);
 
-  // URL Query Parameter Listener (?id=UUID)
+  // URL Query Parameter Listener (?id=UUID or ?importId=... or ?importPayload=...)
   const syncFromUrl = async () => {
     const params = new URLSearchParams(window.location.search);
     const idFromUrl = params.get('id');
     const isPreviewParam = params.get('preview') === 'teacher';
     setIsTeacherPreview(isPreviewParam);
+
+    // 1. Direct transfer import by ID
+    const importId = params.get('importId');
+    if (importId) {
+      try {
+        const item = await fetchLernhilfeById(importId);
+        if (item) {
+          await saveLernhilfe(item);
+          setItems((prev) => {
+            const idx = prev.findIndex((x) => x.id === item.id);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = item;
+              return copy;
+            }
+            return [item, ...prev];
+          });
+          showToast(`Lernhilfe "${item.title}" erfolgreich auf dieses Smartphone übertragen!`, 'success');
+          // Clean URL param
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+      } catch (e) {
+        console.warn('Transfer import by ID error:', e);
+      }
+    }
+
+    // 2. Direct transfer import by JSON payload
+    const importPayload = params.get('importPayload');
+    if (importPayload) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(importPayload));
+        if (parsed && parsed.id && parsed.title) {
+          await saveLernhilfe(parsed);
+          setItems((prev) => {
+            const idx = prev.findIndex((x) => x.id === parsed.id);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = parsed;
+              return copy;
+            }
+            return [parsed, ...prev];
+          });
+          showToast(`Lernhilfe "${parsed.title}" erfolgreich importiert!`, 'success');
+          window.history.replaceState({}, '', window.location.pathname);
+          return;
+        }
+      } catch (e) {
+        console.warn('Transfer import by payload error:', e);
+      }
+    }
 
     if (idFromUrl) {
       setStudentId(idFromUrl);
@@ -211,6 +266,57 @@ export default function App() {
       };
     }
   }, []);
+
+  // AUTOMATED PARALLEL SYNCHRONIZATION:
+  // 1. Instant cross-tab & local bus listener
+  useEffect(() => {
+    const unsubscribe = subscribeToSyncChanges(() => {
+      fetchLernhilfen().then((updated) => {
+        setItems(updated);
+      }).catch(() => {});
+    });
+    return unsubscribe;
+  }, []);
+
+  // 2. Auto-sync on window focus / tab visibility / smartphone screen unlock
+  useEffect(() => {
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLernhilfen().then((updated) => {
+          setItems((prev) => {
+            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            return prevHash !== nextHash ? updated : prev;
+          });
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    return () => {
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, []);
+
+  // 3. Continuous background heartbeat polling (every 4 seconds when viewing overview)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Only poll when tab is visible and teacher is not in middle of writing a card
+      if (document.visibilityState === 'visible' && !isCreatingNew && !editingItem) {
+        fetchLernhilfen().then((updated) => {
+          setItems((prev) => {
+            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            return prevHash !== nextHash ? updated : prev;
+          });
+        }).catch(() => {});
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [isCreatingNew, editingItem]);
 
 
   // Student Navigation: Open Preview from Teacher Dashboard
@@ -333,6 +439,15 @@ export default function App() {
     }
   };
 
+  const handleImportBatch = async (newItems: Lernhilfe[]) => {
+    for (const it of newItems) {
+      await saveLernhilfe(it);
+    }
+    const refreshed = await fetchLernhilfen();
+    setItems(refreshed);
+    showToast(`${newItems.length} Lernhilfen erfolgreich importiert und gespeichert!`, 'success');
+  };
+
   // 1. If student mode is active (?id=...)
   if (studentId) {
     if (loading && !studentItem) {
@@ -451,6 +566,17 @@ export default function App() {
 
           {/* Zone 3: Quick Controls */}
           <div className="flex items-center gap-2 shrink-0">
+            {/* Quick Transfer Button */}
+            <button
+              type="button"
+              onClick={() => setIsTransferOpen(true)}
+              title="Lernhilfen per QR-Code auf Smartphone übertragen oder Backup erstellen"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span className="hidden sm:inline">Übertragen</span>
+            </button>
+
             {/* Quick Lock / Teacher Logout Button */}
             <button
               type="button"
@@ -542,6 +668,7 @@ export default function App() {
             isSupabaseEnabled={isSupabaseEnabled}
             onSync={handleManualSync}
             isSyncing={isSyncing}
+            onOpenTransfer={() => setIsTransferOpen(true)}
           />
         )}
       </main>
@@ -554,6 +681,16 @@ export default function App() {
       </footer>
 
       {/* Modals */}
+      {isTransferOpen && (
+        <TransferModal
+          items={items}
+          onClose={() => setIsTransferOpen(false)}
+          onImportBatch={handleImportBatch}
+          onSync={handleManualSync}
+          isSyncing={isSyncing}
+        />
+      )}
+
       {qrModalItem && (
         <QrCodeModal
           item={qrModalItem}

@@ -4,6 +4,31 @@ import { Lernhilfe, SupabaseSettings } from '../types';
 const STORAGE_KEY_SETTINGS = 'lernhilfen_supabase_settings';
 const STORAGE_KEY_ITEMS = 'lernhilfen_local_items_v1';
 
+const syncBroadcast = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('lernhilfen_sync_bus')
+  : null;
+
+export function notifySyncChange() {
+  try {
+    syncBroadcast?.postMessage({ type: 'SYNC_CHANGE', timestamp: Date.now() });
+    window.dispatchEvent(new CustomEvent('app-items-updated'));
+  } catch (e) {}
+}
+
+export function subscribeToSyncChanges(callback: () => void): () => void {
+  const handler = () => callback();
+  if (syncBroadcast) {
+    syncBroadcast.addEventListener('message', handler);
+  }
+  window.addEventListener('app-items-updated', handler);
+  return () => {
+    if (syncBroadcast) {
+      syncBroadcast.removeEventListener('message', handler);
+    }
+    window.removeEventListener('app-items-updated', handler);
+  };
+}
+
 export const SAMPLE_LERNHILFEN: Lernhilfe[] = [
   {
     id: 'pythagoras-leiter-demo',
@@ -287,7 +312,39 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
   const localItems = getLocalLernhilfen();
   const supabase = getSupabaseClient();
 
-  // 1. If Supabase Cloud Modus is enabled, Supabase is PRIMARY!
+  const mergedMap = new Map<string, Lernhilfe>();
+  // 1. Start with local items
+  localItems.forEach((it) => {
+    if (it && it.id) mergedMap.set(it.id, it);
+  });
+
+  // 2. Fetch from server disk store (/api/lernhilfen) - ensures sync across all devices on the same app
+  try {
+    const res = await fetch('/api/lernhilfen');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.items)) {
+        data.items.forEach((srvItem: Lernhilfe) => {
+          if (srvItem && srvItem.id) {
+            const existing = mergedMap.get(srvItem.id);
+            if (!existing) {
+              mergedMap.set(srvItem.id, srvItem);
+            } else {
+              const srvTime = new Date(srvItem.updated_at || srvItem.created_at || 0).getTime();
+              const locTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+              if (srvTime >= locTime) {
+                mergedMap.set(srvItem.id, srvItem);
+              }
+            }
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Server /api/lernhilfen fetch error, proceeding with available data:', err);
+  }
+
+  // 3. Fetch from Supabase Cloud if enabled
   if (settings.enabled && supabase) {
     try {
       const { data, error } = await supabase
@@ -296,70 +353,74 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Supabase fetch failed:', error);
-        window.dispatchEvent(
-          new CustomEvent('cloud-sync-error', {
-            detail: {
-              message: `Cloud-Synchronisation fehlgeschlagen: ${error.message}`,
-              code: error.code,
-              hint: error.code === 'PGRST204' ? 'Spalten fehlen in Supabase' : error.message,
-            },
-          })
-        );
-      } else if (Array.isArray(data)) {
-        const cloudMapped: Lernhilfe[] = data.map((row: any) => ({
-          id: String(row.id),
-          title: row.title || 'Ohne Titel',
-          subject: row.subject || 'Allgemein',
-          grade_level: row.grade_level || undefined,
-          group_name: row.group_name || undefined,
-          task_context: row.task_context || '',
-          task_image: row.task_image || undefined,
-          disclosure_mode: row.disclosure_mode || 'stepped',
-          hints: Array.isArray(row.hints) ? row.hints : [],
-          qr_design: row.qr_design || undefined,
-          created_at: row.created_at || new Date().toISOString(),
-          updated_at: row.updated_at || new Date().toISOString(),
-        }));
+        console.warn('Supabase fetch notice:', error.message);
+        // Only dispatch error event if not the known default RLS restriction
+        if (error.code !== '42501') {
+          window.dispatchEvent(
+            new CustomEvent('cloud-sync-error', {
+              detail: {
+                message: `Cloud-Synchronisation: ${error.message}`,
+                code: error.code,
+                hint: error.code === 'PGRST204' ? 'Spalten fehlen in Supabase' : error.message,
+              },
+            })
+          );
+        }
+      } else if (Array.isArray(data) && data.length > 0) {
+        data.forEach((row: any) => {
+          if (row && row.id) {
+            const cloudItem: Lernhilfe = {
+              id: String(row.id),
+              title: row.title || 'Ohne Titel',
+              subject: row.subject || 'Allgemein',
+              grade_level: row.grade_level || undefined,
+              group_name: row.group_name || undefined,
+              task_context: row.task_context || '',
+              task_image: row.task_image || undefined,
+              disclosure_mode: row.disclosure_mode || 'stepped',
+              hints: Array.isArray(row.hints) ? row.hints : [],
+              qr_design: row.qr_design || undefined,
+              created_at: row.created_at || new Date().toISOString(),
+              updated_at: row.updated_at || new Date().toISOString(),
+            };
 
-        // Merge: Cloud items + any local items not yet in Cloud
-        const mergedMap = new Map<string, Lernhilfe>();
-        localItems.forEach((it) => mergedMap.set(it.id, it));
-        cloudMapped.forEach((it) => mergedMap.set(it.id, it));
-
-        const mergedList = Array.from(mergedMap.values());
-        saveLocalLernhilfen(mergedList);
-
-        // Sync to server disk store in background if server exists
-        fetch('/api/lernhilfen', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ batch: mergedList }),
-        }).catch(() => {});
-
-        return mergedList;
+            const existing = mergedMap.get(cloudItem.id);
+            if (!existing) {
+              mergedMap.set(cloudItem.id, cloudItem);
+            } else {
+              const cloudTime = new Date(cloudItem.updated_at || cloudItem.created_at || 0).getTime();
+              const curTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+              if (cloudTime >= curTime) {
+                mergedMap.set(cloudItem.id, cloudItem);
+              }
+            }
+          }
+        });
       }
     } catch (err: any) {
       console.warn('Supabase fetch exception:', err);
     }
   }
 
-  // 2. Try server disk store (/api/lernhilfen)
-  try {
-    const res = await fetch('/api/lernhilfen');
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data?.items)) {
-        saveLocalLernhilfen(data.items);
-        return data.items;
-      }
-    }
-  } catch (err) {
-    console.warn('Server /api/lernhilfen fetch error, falling back to local storage:', err);
-  }
+  const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
+    const timeA = new Date(b.created_at || 0).getTime();
+    const timeB = new Date(a.created_at || 0).getTime();
+    return timeA - timeB;
+  });
 
-  // 3. Fallback to localStorage
-  return localItems;
+  // Save merged result back to localStorage
+  saveLocalLernhilfen(mergedList);
+
+  // Sync any items that might only exist locally back to server in background
+  try {
+    fetch('/api/lernhilfen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batch: mergedList }),
+    }).catch(() => {});
+  } catch (e) {}
+
+  return mergedList;
 }
 
 export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> {
@@ -368,7 +429,19 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
   const localFound = localItems.find((item) => item.id === id);
   if (localFound) return localFound;
 
-  // 2. Check Supabase if enabled
+  // 2. Check server disk store (/api/lernhilfen/:id)
+  try {
+    const res = await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.item) {
+        saveLocalLernhilfen([data.item, ...localItems.filter((x) => x.id !== id)]);
+        return data.item;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Check Supabase if enabled
   const supabase = getSupabaseClient();
   const settings = getSupabaseSettings();
   if (settings.enabled && supabase) {
@@ -431,13 +504,13 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
   }
   saveLocalLernhilfen(localItems);
 
-  // Sync with server disk store in background
+  // Sync with server disk store
   try {
-    fetch('/api/lernhilfen', {
+    await fetch('/api/lernhilfen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedItem),
-    }).catch(() => {});
+    });
   } catch (e) {
     console.warn('Could not sync item to server disk store:', e);
   }
@@ -463,14 +536,14 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
 
       const { error } = await supabase.from('lernhilfen').upsert(payload);
       if (error) {
-        console.error('Supabase upsert error:', error);
-        let userMessage = `Cloud-Speicherung fehlgeschlagen: ${error.message}`;
+        console.warn('Supabase upsert status:', error);
+        let userMessage = `Cloud-Speicherung: ${error.message}`;
         if (error.code === 'PGRST204' || error.message.includes('column')) {
           userMessage = `Achtung: Spalten in Supabase-Tabelle 'lernhilfen' fehlen! Bitte im SQL-Editor ausführen. (${error.message})`;
         } else if (error.message.includes('uuid')) {
           userMessage = `Achtung: Spalte 'id' in Supabase ist als UUID angelegt! Bitte im SQL-Editor zu TEXT ändern.`;
         } else if (error.code === '42501' || error.message.includes('policy')) {
-          userMessage = `Achtung: Keine Schreibberechtigung in Supabase (RLS Policy). Bitte im SQL-Editor freigeben.`;
+          userMessage = `Lernhilfe lokal & auf dem Server gesichert. (Supabase Cloud-Projekt ist schreibgeschützt / RLS 42501)`;
         }
         window.dispatchEvent(
           new CustomEvent('cloud-sync-error', {
@@ -501,6 +574,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
     }
   }
 
+  notifySyncChange();
   return updatedItem;
 }
 
@@ -531,6 +605,8 @@ export async function deleteLernhilfe(id: string): Promise<void> {
       console.warn('Supabase delete failed:', e);
     }
   }
+
+  notifySyncChange();
 }
 
 export async function uploadMediaToSupabase(
