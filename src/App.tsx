@@ -563,25 +563,23 @@ export default function App() {
             </span>
           </div>
 
-          {/* Zone 2: Storage Status Badge & Manual Cloud Sync Button */}
-          <div className="hidden sm:flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+          {/* Zone 2: Storage & Sync Status Indicator */}
+          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             {isSupabaseEnabled ? (
-              <button
-                type="button"
-                onClick={handleManualSync}
-                disabled={isSyncing}
-                title="Jetzt mit Supabase Cloud synchronisieren (frische Daten laden)"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800 transition-all shadow-2xs active:scale-95 cursor-pointer"
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium border border-emerald-200/80 dark:border-emerald-800/60 text-[11px]"
+                title="Automatische Cloud-Synchronisation aktiv"
               >
-                <Cloud className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Supabase Cloud</span>
-                <RefreshCw className={`w-3 h-3 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
-              </button>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <Cloud className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Cloud aktiv</span>
+              </div>
             ) : (
               <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium text-[11px]"
+                title="Lokaler Speicher aktiv"
               >
-                <HardDrive className="w-3.5 h-3.5" />
+                <HardDrive className="w-3.5 h-3.5 text-slate-500" />
                 <span>Lokaler Speicher</span>
               </div>
             )}
@@ -589,15 +587,24 @@ export default function App() {
 
           {/* Zone 3: Quick Controls */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Transfer Button */}
+            {/* Proactive Sync Button: Grünes Icon direkt neben dem Sperrsymbol */}
             <button
               type="button"
-              onClick={() => setIsTransferOpen(true)}
-              title="Lernhilfen per QR-Code auf Smartphone übertragen oder Backup erstellen"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-colors shadow-xs"
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              title={
+                isSyncing
+                  ? 'Synchronisation läuft...'
+                  : 'Synchronisation proaktiv aktualisieren (frische Daten von allen Geräten laden)'
+              }
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-all shadow-xs active:scale-95 cursor-pointer disabled:opacity-60"
             >
-              <Smartphone className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="hidden sm:inline">Übertragen</span>
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${
+                  isSyncing ? 'animate-spin' : ''
+                }`}
+              />
+              <span className="hidden sm:inline">Sync</span>
             </button>
 
             {/* Quick Lock / Teacher Logout Button */}
@@ -608,7 +615,7 @@ export default function App() {
                 setIsTeacherAuthenticated(false);
               }}
               title="Lehrkraft-Bereich sperren (Schutz vor Schülern)"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg border border-amber-200 dark:border-amber-800 transition-colors shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-lg border border-amber-200 dark:border-amber-800 transition-colors shadow-xs cursor-pointer"
             >
               <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
               <span className="hidden sm:inline">Sperren</span>
@@ -689,9 +696,6 @@ export default function App() {
             onUngroupWorksheet={handleUngroupWorksheet}
             onDeleteWorksheet={handleDeleteWorksheet}
             isSupabaseEnabled={isSupabaseEnabled}
-            onSync={handleManualSync}
-            isSyncing={isSyncing}
-            onOpenTransfer={() => setIsTransferOpen(true)}
           />
         )}
       </main>
@@ -765,6 +769,7 @@ export default function App() {
             setIsTeacherAuthenticated(isTeacherSessionActive());
             loadData();
           }}
+          onOpenTransfer={() => setIsTransferOpen(true)}
         />
       )}
 

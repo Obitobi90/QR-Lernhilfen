@@ -12,6 +12,13 @@
         }
       },
       "updatedAt": "2026-10-18T14:39:59.665Z"
+    },
+    "pythagoras-leiter-demo": {
+      "lernhilfeId": "pythagoras-leiter-demo",
+      "totalViews": 0,
+      "hintStats": {},
+      "suggestions": [],
+      "updatedAt": "2026-10-23T13:12:54.583Z"
     }
   },
   "votes": {}

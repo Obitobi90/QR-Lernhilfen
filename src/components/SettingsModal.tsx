@@ -93,12 +93,14 @@ interface SettingsModalProps {
   onClose: () => void;
   onSettingsUpdated: () => void;
   initialTab?: 'qr' | 'security' | 'cloud' | 'pwa';
+  onOpenTransfer?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onSettingsUpdated,
   initialTab = 'qr',
+  onOpenTransfer,
 }) => {
   // Active Tab: 'qr' | 'security' | 'cloud' | 'pwa'
   const [activeTab, setActiveTab] = useState<'qr' | 'security' | 'cloud' | 'pwa'>(initialTab);
