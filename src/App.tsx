@@ -86,12 +86,35 @@ export default function App() {
     type: 'success' | 'info' | 'error';
   } | null>(null);
 
+  // Cloud sync in progress state
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
       setToast((current) => (current?.message === message ? null : current));
-    }, 3500);
+    }, 4500);
   };
+
+  // Listen for Cloud synchronization notifications & errors
+  useEffect(() => {
+    const handleSyncError = (e: any) => {
+      const msg = e.detail?.message || 'Cloud-Synchronisationsfehler';
+      showToast(msg, 'error');
+    };
+    const handleSyncSuccess = (e: any) => {
+      const msg = e.detail?.message || 'Erfolgreich mit Cloud synchronisiert';
+      showToast(msg, 'success');
+    };
+
+    window.addEventListener('cloud-sync-error', handleSyncError);
+    window.addEventListener('cloud-sync-success', handleSyncSuccess);
+
+    return () => {
+      window.removeEventListener('cloud-sync-error', handleSyncError);
+      window.removeEventListener('cloud-sync-success', handleSyncSuccess);
+    };
+  }, []);
 
   // Apply dark mode class and data-theme to documentElement and body
   useEffect(() => {
@@ -150,6 +173,19 @@ export default function App() {
     const data = await fetchLernhilfen();
     setItems(data);
     setLoading(false);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const data = await fetchLernhilfen();
+      setItems(data);
+      showToast(`Cloud-Synchronisation abgeschlossen (${data.length} Lernhilfen geladen).`, 'success');
+    } catch (e: any) {
+      showToast(`Fehler bei der Synchronisation: ${e.message}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   useEffect(() => {
@@ -389,15 +425,20 @@ export default function App() {
             </span>
           </div>
 
-          {/* Zone 2: Storage Status Badge (clean, non-redundant) */}
-          <div className="hidden sm:flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+          {/* Zone 2: Storage Status Badge & Manual Cloud Sync Button */}
+          <div className="hidden sm:flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
             {isSupabaseEnabled ? (
-              <div
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800"
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                title="Jetzt mit Supabase Cloud synchronisieren (frische Daten laden)"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800 transition-all shadow-2xs active:scale-95 cursor-pointer"
               >
-                <Cloud className="w-3.5 h-3.5" />
+                <Cloud className="w-3.5 h-3.5 text-emerald-600" />
                 <span>Supabase Cloud</span>
-              </div>
+                <RefreshCw className={`w-3 h-3 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              </button>
             ) : (
               <div
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium"
@@ -499,6 +540,8 @@ export default function App() {
             onUngroupWorksheet={handleUngroupWorksheet}
             onDeleteWorksheet={handleDeleteWorksheet}
             isSupabaseEnabled={isSupabaseEnabled}
+            onSync={handleManualSync}
+            isSyncing={isSyncing}
           />
         )}
       </main>

@@ -195,9 +195,156 @@ function saveLocalLernhilfen(items: Lernhilfe[]): void {
   localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
 }
 
-// Unified Database API (Server Disk Store + LocalStorage + optional Supabase)
+export interface SchemaHealthResult {
+  ok: boolean;
+  message: string;
+  missingColumns: string[];
+  isIdUuid: boolean;
+  hasRlsIssue: boolean;
+}
+
+export async function checkSupabaseSchemaHealth(): Promise<SchemaHealthResult> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      message: 'Supabase-Client konnte nicht initialisiert werden.',
+      missingColumns: [],
+      isIdUuid: false,
+      hasRlsIssue: false,
+    };
+  }
+
+  const missingColumns: string[] = [];
+  let isIdUuid = false;
+  let hasRlsIssue = false;
+
+  // 1. Probe for expected columns
+  const expectedCols = [
+    'id',
+    'title',
+    'subject',
+    'task_context',
+    'task_image',
+    'hints',
+    'grade_level',
+    'group_name',
+    'disclosure_mode',
+    'qr_design',
+    'updated_at',
+  ];
+
+  for (const col of expectedCols) {
+    try {
+      const { error } = await supabase.from('lernhilfen').select(col).limit(1);
+      if (error && (error.code === 'PGRST204' || error.message.includes('column'))) {
+        missingColumns.push(col);
+      }
+    } catch {
+      missingColumns.push(col);
+    }
+  }
+
+  // 2. Probe if non-uuid id string is accepted by upsert or if syntax error
+  try {
+    const testProbeId = 'schema_probe_' + Date.now();
+    const probeRes = await supabase.from('lernhilfen').upsert({ id: testProbeId, title: 'probe' });
+    if (probeRes.error) {
+      if (probeRes.error.message.includes('uuid')) {
+        isIdUuid = true;
+      }
+      if (probeRes.error.code === '42501' || probeRes.error.message.includes('policy')) {
+        hasRlsIssue = true;
+      }
+    } else {
+      // Clean up test probe row
+      await supabase.from('lernhilfen').delete().eq('id', testProbeId);
+    }
+  } catch (e) {}
+
+  const hasIssues = missingColumns.length > 0 || isIdUuid || hasRlsIssue;
+  let message = 'Supabase-Datenbank ist vollständig und korrekt eingerichtet!';
+  if (hasIssues) {
+    const parts = [];
+    if (isIdUuid) parts.push("Spalte 'id' ist UUID statt TEXT");
+    if (missingColumns.length > 0) parts.push(`Fehlende Spalten: ${missingColumns.join(', ')}`);
+    if (hasRlsIssue) parts.push('Schreibzugriff durch RLS blockiert');
+    message = `Reparatur erforderlich: ${parts.join(' · ')}`;
+  }
+
+  return {
+    ok: !hasIssues,
+    message,
+    missingColumns,
+    isIdUuid,
+    hasRlsIssue,
+  };
+}
+
+// Unified Database API (Server Disk Store + LocalStorage + Supabase Cloud)
 export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
-  // 1. Try server disk store first (/api/lernhilfen)
+  const settings = getSupabaseSettings();
+  const localItems = getLocalLernhilfen();
+  const supabase = getSupabaseClient();
+
+  // 1. If Supabase Cloud Modus is enabled, Supabase is PRIMARY!
+  if (settings.enabled && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('lernhilfen')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Supabase fetch failed:', error);
+        window.dispatchEvent(
+          new CustomEvent('cloud-sync-error', {
+            detail: {
+              message: `Cloud-Synchronisation fehlgeschlagen: ${error.message}`,
+              code: error.code,
+              hint: error.code === 'PGRST204' ? 'Spalten fehlen in Supabase' : error.message,
+            },
+          })
+        );
+      } else if (Array.isArray(data)) {
+        const cloudMapped: Lernhilfe[] = data.map((row: any) => ({
+          id: String(row.id),
+          title: row.title || 'Ohne Titel',
+          subject: row.subject || 'Allgemein',
+          grade_level: row.grade_level || undefined,
+          group_name: row.group_name || undefined,
+          task_context: row.task_context || '',
+          task_image: row.task_image || undefined,
+          disclosure_mode: row.disclosure_mode || 'stepped',
+          hints: Array.isArray(row.hints) ? row.hints : [],
+          qr_design: row.qr_design || undefined,
+          created_at: row.created_at || new Date().toISOString(),
+          updated_at: row.updated_at || new Date().toISOString(),
+        }));
+
+        // Merge: Cloud items + any local items not yet in Cloud
+        const mergedMap = new Map<string, Lernhilfe>();
+        localItems.forEach((it) => mergedMap.set(it.id, it));
+        cloudMapped.forEach((it) => mergedMap.set(it.id, it));
+
+        const mergedList = Array.from(mergedMap.values());
+        saveLocalLernhilfen(mergedList);
+
+        // Sync to server disk store in background if server exists
+        fetch('/api/lernhilfen', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batch: mergedList }),
+        }).catch(() => {});
+
+        return mergedList;
+      }
+    } catch (err: any) {
+      console.warn('Supabase fetch exception:', err);
+    }
+  }
+
+  // 2. Try server disk store (/api/lernhilfen)
   try {
     const res = await fetch('/api/lernhilfen');
     if (res.ok) {
@@ -211,58 +358,20 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
     console.warn('Server /api/lernhilfen fetch error, falling back to local storage:', err);
   }
 
-  // 2. Try Supabase if user explicitly enabled it
-  const supabase = getSupabaseClient();
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('lernhilfen')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data && data.length > 0) {
-        const mapped = data.map((row: any) => ({
-          id: row.id,
-          title: row.title || 'Ohne Titel',
-          subject: row.subject || 'Allgemein',
-          grade_level: row.grade_level || undefined,
-          group_name: row.group_name || undefined,
-          task_context: row.task_context || '',
-          task_image: row.task_image || undefined,
-          hints: Array.isArray(row.hints) ? row.hints : [],
-          created_at: row.created_at || new Date().toISOString(),
-          updated_at: row.updated_at || new Date().toISOString(),
-        }));
-        saveLocalLernhilfen(mapped);
-        return mapped;
-      }
-    } catch (e) {
-      console.warn('Supabase fetch failed, falling back to local storage:', e);
-    }
-  }
-
   // 3. Fallback to localStorage
-  return getLocalLernhilfen();
+  return localItems;
 }
 
 export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> {
-  // 1. Check local items
+  // 1. Check local items first
   const localItems = getLocalLernhilfen();
   const localFound = localItems.find((item) => item.id === id);
   if (localFound) return localFound;
 
-  // 2. Check server disk store
-  try {
-    const res = await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.item) return data.item;
-    }
-  } catch (e) {}
-
-  // 3. Check Supabase if enabled
+  // 2. Check Supabase if enabled
   const supabase = getSupabaseClient();
-  if (supabase) {
+  const settings = getSupabaseSettings();
+  if (settings.enabled && supabase) {
     try {
       const { data, error } = await supabase
         .from('lernhilfen')
@@ -271,23 +380,37 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
         .maybeSingle();
 
       if (!error && data) {
-        return {
-          id: data.id,
+        const item: Lernhilfe = {
+          id: String(data.id),
           title: data.title || '',
           subject: data.subject || '',
           grade_level: data.grade_level || undefined,
           group_name: data.group_name || undefined,
           task_context: data.task_context || '',
           task_image: data.task_image || undefined,
+          disclosure_mode: data.disclosure_mode || 'stepped',
           hints: Array.isArray(data.hints) ? data.hints : [],
+          qr_design: data.qr_design || undefined,
           created_at: data.created_at || new Date().toISOString(),
           updated_at: data.updated_at || new Date().toISOString(),
         };
+        // Cache locally
+        saveLocalLernhilfen([item, ...localItems.filter((x) => x.id !== id)]);
+        return item;
       }
     } catch (e) {
       console.warn('Supabase fetch by ID failed:', e);
     }
   }
+
+  // 3. Check server disk store
+  try {
+    const res = await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.item) return data.item;
+    }
+  } catch (e) {}
 
   return null;
 }
@@ -308,36 +431,73 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
   }
   saveLocalLernhilfen(localItems);
 
-  // Sync with server disk store
+  // Sync with server disk store in background
   try {
-    await fetch('/api/lernhilfen', {
+    fetch('/api/lernhilfen', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedItem),
-    });
+    }).catch(() => {});
   } catch (e) {
     console.warn('Could not sync item to server disk store:', e);
   }
 
   // Sync with Supabase if explicitly enabled
+  const settings = getSupabaseSettings();
   const supabase = getSupabaseClient();
-  if (supabase) {
+  if (settings.enabled && supabase) {
     try {
-      const payload = {
+      const payload: any = {
         id: updatedItem.id,
         title: updatedItem.title,
         subject: updatedItem.subject || 'Allgemein',
         grade_level: updatedItem.grade_level || null,
         group_name: updatedItem.group_name || null,
-        task_context: updatedItem.task_context,
+        task_context: updatedItem.task_context || '',
         task_image: updatedItem.task_image || null,
-        hints: updatedItem.hints,
+        disclosure_mode: updatedItem.disclosure_mode || 'stepped',
+        hints: updatedItem.hints || [],
+        qr_design: updatedItem.qr_design || null,
         updated_at: updatedItem.updated_at,
       };
 
-      await supabase.from('lernhilfen').upsert(payload);
-    } catch (e) {
+      const { error } = await supabase.from('lernhilfen').upsert(payload);
+      if (error) {
+        console.error('Supabase upsert error:', error);
+        let userMessage = `Cloud-Speicherung fehlgeschlagen: ${error.message}`;
+        if (error.code === 'PGRST204' || error.message.includes('column')) {
+          userMessage = `Achtung: Spalten in Supabase-Tabelle 'lernhilfen' fehlen! Bitte im SQL-Editor ausführen. (${error.message})`;
+        } else if (error.message.includes('uuid')) {
+          userMessage = `Achtung: Spalte 'id' in Supabase ist als UUID angelegt! Bitte im SQL-Editor zu TEXT ändern.`;
+        } else if (error.code === '42501' || error.message.includes('policy')) {
+          userMessage = `Achtung: Keine Schreibberechtigung in Supabase (RLS Policy). Bitte im SQL-Editor freigeben.`;
+        }
+        window.dispatchEvent(
+          new CustomEvent('cloud-sync-error', {
+            detail: {
+              message: userMessage,
+              rawError: error,
+            },
+          })
+        );
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('cloud-sync-success', {
+            detail: {
+              message: 'Erfolgreich mit Supabase Cloud synchronisiert.',
+            },
+          })
+        );
+      }
+    } catch (e: any) {
       console.warn('Supabase upsert warning:', e);
+      window.dispatchEvent(
+        new CustomEvent('cloud-sync-error', {
+          detail: {
+            message: `Verbindungsfehler: ${e.message}`,
+          },
+        })
+      );
     }
   }
 
@@ -351,18 +511,22 @@ export async function deleteLernhilfe(id: string): Promise<void> {
 
   // Delete from server disk store
   try {
-    await fetch(`/api/lernhilfen/${encodeURIComponent(id)}`, {
+    fetch(`/api/lernhilfen/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-    });
+    }).catch(() => {});
   } catch (e) {
     console.warn('Could not delete item from server store:', e);
   }
 
   // Delete from Supabase if explicitly enabled
   const supabase = getSupabaseClient();
-  if (supabase) {
+  const settings = getSupabaseSettings();
+  if (settings.enabled && supabase) {
     try {
-      await supabase.from('lernhilfen').delete().eq('id', id);
+      const { error } = await supabase.from('lernhilfen').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase delete error:', error);
+      }
     } catch (e) {
       console.warn('Supabase delete failed:', e);
     }

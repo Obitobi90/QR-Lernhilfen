@@ -857,9 +857,23 @@ app.get('/api/lernhilfen/:id', (req, res) => {
   return res.json({ item });
 });
 
-// 3. Save or update Lernhilfe
+// 3. Save or update Lernhilfe (supports single item or batch sync)
 app.post('/api/lernhilfen', (req, res) => {
-  const newItem = req.body;
+  const body = req.body;
+  if (body?.batch && Array.isArray(body.batch)) {
+    const itemMap = new Map<string, any>();
+    itemsDb.forEach((it) => itemMap.set(it.id, it));
+    body.batch.forEach((it: any) => {
+      if (it?.id && it?.title) {
+        itemMap.set(it.id, it);
+      }
+    });
+    itemsDb = Array.from(itemMap.values());
+    saveItemsToDisk();
+    return res.json({ success: true, count: itemsDb.length });
+  }
+
+  const newItem = body;
   if (!newItem || !newItem.id || !newItem.title) {
     return res.status(400).json({ error: 'Ungültige Daten' });
   }

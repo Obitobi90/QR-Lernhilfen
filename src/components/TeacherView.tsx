@@ -27,6 +27,7 @@ import {
   Edit2,
   Unlink,
   RotateCcw,
+  RefreshCw,
 } from 'lucide-react';
 
 interface TeacherViewProps {
@@ -44,6 +45,8 @@ interface TeacherViewProps {
   onOpenPreview: (id: string) => void;
   onOpenSettings: () => void;
   isSupabaseEnabled: boolean;
+  onSync?: () => void;
+  isSyncing?: boolean;
 }
 
 export const TeacherView: React.FC<TeacherViewProps> = ({
@@ -61,6 +64,8 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   onOpenPreview,
   onOpenSettings,
   isSupabaseEnabled,
+  onSync,
+  isSyncing = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('Alle');
@@ -394,7 +399,20 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isSupabaseEnabled && onSync && (
+            <button
+              type="button"
+              onClick={onSync}
+              disabled={isSyncing}
+              title="Aktuelle Lernhilfen & Änderungen direkt mit der Cloud synchronisieren"
+              className="px-3.5 py-2.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 transition-colors shrink-0 shadow-2xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Synchronisiere...' : 'Cloud synchronisieren'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onCreateNew()}

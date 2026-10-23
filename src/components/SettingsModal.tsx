@@ -9,6 +9,7 @@ import {
   getSupabaseSettings,
   saveSupabaseSettings,
   getSupabaseClient,
+  checkSupabaseSchemaHealth,
 } from '../utils/supabaseClient';
 import {
   getTeacherPin,
@@ -441,11 +442,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
         setSupabaseError('Ungültige Supabase-Konfiguration.');
         return;
       }
-      const { error } = await client.from('lernhilfen').select('id').limit(1);
-      if (error && error.code !== 'PGRST116') {
-        setSupabaseError(`Verbindungsfehler: ${error.message} (Bitte SQL-Schema anlegen!)`);
+      const health = await checkSupabaseSchemaHealth();
+      if (!health.ok) {
+        setSupabaseError(`${health.message} (Bitte das Reparatur-SQL unten im Supabase SQL Editor ausführen!)`);
+        setSupabaseStatus(null);
       } else {
-        setSupabaseStatus('Erfolgreich mit Supabase verbunden!');
+        setSupabaseStatus('Erfolgreich mit Supabase verbunden! Alle Tabellen-Spalten & Berechtigungen sind bereit.');
+        setSupabaseError(null);
         onSettingsUpdated();
       }
     } catch (err: any) {
@@ -505,22 +508,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
   };
 
 
-  const sqlSchemaSnippet = `-- Tabelle in der Supabase SQL Console anlegen:
+  const sqlSchemaSnippet = `-- ============================================================
+-- SQL-REPARATUR FÜR DEINE SUPABASE-TABELLE 'lernhilfen'
+-- Kopiere diesen Code in die Supabase SQL Console und klicke 'RUN':
+-- ============================================================
+
+-- 1. Tabelle anlegen (falls noch nicht vorhanden):
 CREATE TABLE IF NOT EXISTS public.lernhilfen (
   id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT 'Ohne Titel',
   subject TEXT DEFAULT 'Allgemein',
+  grade_level TEXT,
+  group_name TEXT,
   task_context TEXT DEFAULT '',
   task_image TEXT,
+  disclosure_mode TEXT DEFAULT 'stepped',
   hints JSONB NOT NULL DEFAULT '[]'::jsonb,
+  qr_design JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Öffentlicher Lesezugriff für Schüler:
+-- 2. Spalte id zu TEXT ändern (falls sie als UUID angelegt wurde):
+ALTER TABLE public.lernhilfen ALTER COLUMN id TYPE TEXT USING id::text;
+
+-- 3. Fehlende Spalten automatisch nachrüsten:
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT 'Ohne Titel';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS subject TEXT DEFAULT 'Allgemein';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS grade_level TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS group_name TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_context TEXT DEFAULT '';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFAULT 'stepped';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS hints JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 4. Row Level Security (RLS) freigeben (Lese- und Schreibzugriff für alle deine Geräte):
 ALTER TABLE public.lernhilfen ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public Read Access" ON public.lernhilfen;
 CREATE POLICY "Public Read Access" ON public.lernhilfen FOR SELECT USING (true);
-CREATE POLICY "Authenticated Teacher All" ON public.lernhilfen FOR ALL USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Teacher Full Access" ON public.lernhilfen;
+CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WITH CHECK (true);
 
 -- Storage Bucket anlegen (in Supabase Storage): 'lernhilfen-media' mit Public Access`;
 
