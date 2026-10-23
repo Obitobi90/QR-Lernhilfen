@@ -220,6 +220,28 @@ function saveLocalLernhilfen(items: Lernhilfe[]): void {
   localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(items));
 }
 
+export const SUPABASE_QUICK_FIX_SQL = `-- ============================================================
+-- 1-KLICK REPARATUR FÜR DEINE SUPABASE-TABELLE 'lernhilfen'
+-- Kopiere diesen Code in die Supabase SQL Console und klicke 'RUN':
+-- ============================================================
+
+-- 1. Spalte 'id' zu TEXT umwandeln (erlaubt 6-stellige Schüler-Codes wie 482105):
+ALTER TABLE public.lernhilfen ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE public.lernhilfen ALTER COLUMN id TYPE TEXT USING id::text;
+
+-- 2. Alle neuen Spalten nachrüsten:
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFAULT 'stepped';
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS group_name TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;
+
+-- 3. Row Level Security freigeben (Lese- und Schreibzugriff für alle Geräte):
+ALTER TABLE public.lernhilfen ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Access" ON public.lernhilfen;
+CREATE POLICY "Public Read Access" ON public.lernhilfen FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Teacher Full Access" ON public.lernhilfen;
+CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WITH CHECK (true);`;
+
 export interface SchemaHealthResult {
   ok: boolean;
   message: string;
@@ -606,11 +628,13 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
           );
         }
       } else if (upsertError) {
-        console.warn('Supabase upsert status:', upsertError);
         let userMessage = `Cloud-Speicherung: ${upsertError.message}`;
-        if (upsertError.code === 'PGRST204' || upsertError.message?.includes('column')) {
+        const isUuidError = upsertError.message?.includes('uuid');
+        const isColumnError = upsertError.code === 'PGRST204' || upsertError.message?.includes('column');
+
+        if (isColumnError) {
           userMessage = `Lokal & auf Server gesichert. Supabase-Tabelle benötigt Spalten-Update (${upsertError.message})`;
-        } else if (upsertError.message?.includes('uuid')) {
+        } else if (isUuidError) {
           userMessage = `Lokal & auf Server gesichert. (Spalte 'id' in Supabase ist als UUID angelegt; bitte im SQL-Editor zu TEXT ändern).`;
         } else if (upsertError.code === '42501' || upsertError.message?.includes('policy')) {
           userMessage = `Lokal & auf Server gesichert. (Supabase Cloud-Projekt ist schreibgeschützt / RLS 42501)`;
@@ -621,6 +645,9 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
             detail: {
               message: userMessage,
               rawError: upsertError,
+              isUuidError,
+              isColumnError,
+              quickSql: SUPABASE_QUICK_FIX_SQL,
             },
           })
         );

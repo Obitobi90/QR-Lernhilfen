@@ -72,6 +72,7 @@ export default function App() {
   } | null>(null);
   const [statsModalItem, setStatsModalItem] = useState<Lernhilfe | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'qr' | 'security' | 'cloud' | 'pwa'>('qr');
   const [isTransferOpen, setIsTransferOpen] = useState<boolean>(false);
   const [isSupabaseEnabled, setIsSupabaseEnabled] = useState<boolean>(() => {
     const sb = getSupabaseSettings();
@@ -88,23 +89,45 @@ export default function App() {
   const [toast, setToast] = useState<{
     message: string;
     type: 'success' | 'info' | 'error';
+    actionLabel?: string;
+    onAction?: () => void;
   } | null>(null);
 
   // Cloud sync in progress state
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
-    setToast({ message, type });
+  const showToast = (
+    message: string,
+    type: 'success' | 'info' | 'error' = 'success',
+    actionLabel?: string,
+    onAction?: () => void
+  ) => {
+    setToast({ message, type, actionLabel, onAction });
     setTimeout(() => {
       setToast((current) => (current?.message === message ? null : current));
-    }, 4500);
+    }, actionLabel ? 7000 : 4500);
   };
 
   // Listen for Cloud synchronization notifications & errors
   useEffect(() => {
     const handleSyncError = (e: any) => {
       const msg = e.detail?.message || 'Cloud-Synchronisationsfehler';
-      showToast(msg, 'error');
+      const isUuid = e.detail?.isUuidError || msg.includes('UUID') || msg.includes('uuid');
+      const isCol = e.detail?.isColumnError || msg.includes('Spalten');
+
+      if (isUuid || isCol) {
+        showToast(
+          msg,
+          'error',
+          'Reparatur öffnen',
+          () => {
+            setSettingsInitialTab('cloud');
+            setIsSettingsOpen(true);
+          }
+        );
+      } else {
+        showToast(msg, 'error');
+      }
     };
     const handleSyncSuccess = (e: any) => {
       const msg = e.detail?.message || 'Erfolgreich mit Cloud synchronisiert';
@@ -736,6 +759,7 @@ export default function App() {
 
       {isSettingsOpen && (
         <SettingsModal
+          initialTab={settingsInitialTab}
           onClose={() => setIsSettingsOpen(false)}
           onSettingsUpdated={() => {
             setIsTeacherAuthenticated(isTeacherSessionActive());
@@ -766,6 +790,18 @@ export default function App() {
               <Trash2 className="w-4 h-4 text-slate-400 dark:text-slate-600 shrink-0" />
             )}
             <span className="max-w-xs">{toast.message}</span>
+            {toast.actionLabel && toast.onAction && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.onAction?.();
+                  setToast(null);
+                }}
+                className="px-2.5 py-1 text-[11px] font-bold bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors shadow-2xs whitespace-nowrap shrink-0"
+              >
+                {toast.actionLabel}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setToast(null)}

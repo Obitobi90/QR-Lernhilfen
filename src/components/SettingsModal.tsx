@@ -92,11 +92,16 @@ import {
 interface SettingsModalProps {
   onClose: () => void;
   onSettingsUpdated: () => void;
+  initialTab?: 'qr' | 'security' | 'cloud' | 'pwa';
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSettingsUpdated }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  onClose,
+  onSettingsUpdated,
+  initialTab = 'qr',
+}) => {
   // Active Tab: 'qr' | 'security' | 'cloud' | 'pwa'
-  const [activeTab, setActiveTab] = useState<'qr' | 'security' | 'cloud' | 'pwa'>('qr');
+  const [activeTab, setActiveTab] = useState<'qr' | 'security' | 'cloud' | 'pwa'>(initialTab);
 
   // QR Design State
   const [qrSettings, setQrSettings] = useState<QrDesignSettings>(getQrDesignSettings());
@@ -557,11 +562,27 @@ CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WI
 
 -- Storage Bucket anlegen (in Supabase Storage): 'lernhilfen-media' mit Public Access`;
 
-  const quickColumnMigrationSql = `-- Fehlende Spalten in bestehender Tabelle 'lernhilfen' nachrüsten:
+  const quickColumnMigrationSql = `-- ============================================================
+-- 1-KLICK REPARATUR FÜR DEINE SUPABASE-TABELLE 'lernhilfen'
+-- Kopiere diesen Code in die Supabase SQL Console und klicke 'RUN':
+-- ============================================================
+
+-- 1. Spalte 'id' zu TEXT umwandeln (erlaubt 6-stellige Schüler-Codes wie 482105):
+ALTER TABLE public.lernhilfen ALTER COLUMN id DROP DEFAULT;
+ALTER TABLE public.lernhilfen ALTER COLUMN id TYPE TEXT USING id::text;
+
+-- 2. Alle Spalten nachrüsten (falls noch nicht vorhanden):
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFAULT 'stepped';
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS group_name TEXT;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
-ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;`;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;
+
+-- 3. Row Level Security freigeben:
+ALTER TABLE public.lernhilfen ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public Read Access" ON public.lernhilfen;
+CREATE POLICY "Public Read Access" ON public.lernhilfen FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Teacher Full Access" ON public.lernhilfen;
+CREATE POLICY "Teacher Full Access" ON public.lernhilfen FOR ALL USING (true) WITH CHECK (true);`;
 
   const copySqlToClipboard = async () => {
     try {
@@ -1855,12 +1876,12 @@ ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;`;
                   </div>
                 )}
 
-                {/* Quick Migration for Missing Columns */}
+                {/* Quick Migration for ID & Missing Columns */}
                 <div className="p-3 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 rounded-xl space-y-2 text-xs">
                   <div className="flex items-center justify-between font-semibold text-indigo-950 dark:text-indigo-200">
                     <div className="flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>Schnell-Upgrade für Spalten (z. B. disclosure_mode):</span>
+                      <span>1-Klick Reparatur (Spalte 'id' zu TEXT &amp; Spalten nachrüsten):</span>
                     </div>
                     <button
                       type="button"
@@ -1875,13 +1896,13 @@ ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;`;
                       ) : (
                         <>
                           <Copy className="w-3 h-3" />
-                          <span>Spalten-SQL kopieren</span>
+                          <span>Reparatur-SQL kopieren</span>
                         </>
                       )}
                     </button>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                    Falls PostgREST meldet, dass Spalten wie <code className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">disclosure_mode</code> fehlen: Diesen kurzen 4-Zeiler im Supabase SQL-Editor einfügen &amp; auf <strong>RUN</strong> klicken.
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Behebt den Fehler <em>„Spalte 'id' in Supabase ist als UUID angelegt“</em> und rüstet alle Spalten (<code className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">disclosure_mode</code>, <code className="font-mono text-indigo-600 dark:text-indigo-400 font-semibold">group_name</code> etc.) nach. Erlaubt 6-stellige Schüler-Codes:
                   </p>
                   <pre className="p-2 bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/60 rounded-lg font-mono text-[10px] overflow-x-auto text-indigo-950 dark:text-indigo-300">
                     {quickColumnMigrationSql}
