@@ -13,6 +13,7 @@ import {
 import { generateNumericLernhilfeId } from './utils/idGenerator';
 import { StudentView } from './components/StudentView';
 import { StudentPortal } from './components/StudentPortal';
+import { WorksheetStudentPortal } from './components/WorksheetStudentPortal';
 import { TeacherView } from './components/TeacherView';
 import { LernhilfeEditor } from './components/LernhilfeEditor';
 import { QrCodeModal } from './components/QrCodeModal';
@@ -60,6 +61,9 @@ export default function App() {
   // Active student view id from ?id=UUID
   const [studentId, setStudentId] = useState<string | null>(null);
   const [studentItem, setStudentItem] = useState<Lernhilfe | null>(null);
+
+  // Active worksheet portal name from ?sheet=Name or ?worksheet=Name
+  const [studentWorksheet, setStudentWorksheet] = useState<string | null>(null);
 
   // Modals & Editor states
   const [editingItem, setEditingItem] = useState<Lernhilfe | null>(null);
@@ -163,12 +167,14 @@ export default function App() {
     } catch (e) {}
   }, [darkMode]);
 
-  // URL Query Parameter Listener (?id=UUID or ?importId=... or ?importPayload=...)
+  // URL Query Parameter Listener (?id=UUID or ?sheet=... or ?importId=... or ?importPayload=...)
   const syncFromUrl = async () => {
     const params = new URLSearchParams(window.location.search);
     const idFromUrl = params.get('id');
+    const sheetFromUrl = params.get('sheet') || params.get('worksheet');
     const isPreviewParam = params.get('preview') === 'teacher';
     setIsTeacherPreview(isPreviewParam);
+    setStudentWorksheet(sheetFromUrl ? decodeURIComponent(sheetFromUrl) : null);
 
     // 1. Direct transfer import by ID
     const importId = params.get('importId');
@@ -358,8 +364,36 @@ export default function App() {
     syncFromUrl();
   };
 
+  // Student Navigation: Open Task from Worksheet Portal
+  const handleOpenStudentFromWorksheet = (id: string, groupName: string) => {
+    const previewSuffix = isTeacherPreview ? '&preview=teacher' : '';
+    const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}&sheet=${encodeURIComponent(groupName)}${previewSuffix}`;
+    window.history.pushState({}, '', newUrl);
+    syncFromUrl();
+  };
+
+  // Student Navigation: Return from Task view back to Worksheet Portal
+  const handleBackToWorksheet = (groupName: string) => {
+    const previewSuffix = isTeacherPreview ? '&preview=teacher' : '';
+    const newUrl = `${window.location.pathname}?sheet=${encodeURIComponent(groupName)}${previewSuffix}`;
+    window.history.pushState({}, '', newUrl);
+    syncFromUrl();
+  };
+
+  // Teacher Navigation: Preview Worksheet Portal directly from Worksheet Qr Modal
+  const handleOpenWorksheetPreview = (groupName: string) => {
+    setWorksheetQrModal(null);
+    setIsTeacherPreview(true);
+    const newUrl = `${window.location.pathname}?sheet=${encodeURIComponent(groupName)}&preview=teacher`;
+    window.history.pushState({}, '', newUrl);
+    syncFromUrl();
+  };
+
   const handleCloseTeacherPreview = () => {
     setIsTeacherPreview(false);
+    setStudentWorksheet(null);
+    setStudentId(null);
+    setStudentItem(null);
     window.history.pushState({}, '', window.location.pathname);
     syncFromUrl();
   };
@@ -495,14 +529,26 @@ export default function App() {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Der angeforderte Code existiert nicht mehr oder wurde von der Lehrkraft entfernt.
             </p>
-            {isTeacherPreview && (
-              <button
-                onClick={handleCloseTeacherPreview}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
-              >
-                Vorschau schließen
-              </button>
-            )}
+            <div className="flex items-center justify-center gap-2 pt-2">
+              {studentWorksheet && (
+                <button
+                  type="button"
+                  onClick={() => handleBackToWorksheet(studentWorksheet)}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold"
+                >
+                  Zurück zum Arbeitsblatt
+                </button>
+              )}
+              {isTeacherPreview && (
+                <button
+                  type="button"
+                  onClick={handleCloseTeacherPreview}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold"
+                >
+                  Vorschau schließen
+                </button>
+              )}
+            </div>
           </div>
         </div>
       );
@@ -515,11 +561,36 @@ export default function App() {
         onClosePreview={handleCloseTeacherPreview}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+        fromWorksheet={studentWorksheet || undefined}
+        onBackToWorksheet={studentWorksheet ? () => handleBackToWorksheet(studentWorksheet) : undefined}
       />
     );
   }
 
-  // 2. Student Portal: When ?id= is missing and user is NOT authenticated as Teacher
+  // 2. Worksheet Master Portal: When ?sheet=... is present without a specific ?id=...
+  if (studentWorksheet) {
+    const worksheetTasks = items.filter(
+      (i) => i.group_name && i.group_name.trim().toLowerCase() === studentWorksheet.trim().toLowerCase()
+    );
+
+    return (
+      <WorksheetStudentPortal
+        groupName={studentWorksheet}
+        items={worksheetTasks}
+        onSelectTask={(task) => handleOpenStudentFromWorksheet(task.id, studentWorksheet)}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+        onTeacherLogin={() => {
+          setTeacherSessionActive(true);
+          setIsTeacherAuthenticated(true);
+        }}
+        isTeacherPreview={isTeacherPreview}
+        onClosePreview={handleCloseTeacherPreview}
+      />
+    );
+  }
+
+  // 3. General Student Portal: When ?id= and ?sheet= are missing and user is NOT authenticated as Teacher
   // Prevents pupils from clearing the URL and accessing the teacher dashboard
   if (!isTeacherAuthenticated) {
     return (
@@ -751,6 +822,7 @@ export default function App() {
             setWorksheetQrModal(null);
             handleOpenStudentView(id);
           }}
+          onOpenWorksheetPortal={handleOpenWorksheetPreview}
         />
       )}
 

@@ -181,6 +181,48 @@ export function getEffectiveQrDesign(lernhilfe?: Partial<Lernhilfe> | null): QrD
 }
 
 /**
+ * Returns the customized QR code design for a Master Worksheet Group.
+ * If configured, loads from persistent localStorage; otherwise falls back to global default.
+ */
+export function getWorksheetQrDesign(groupName: string): QrDesignSettings {
+  if (!groupName) return getQrDesignSettings();
+  try {
+    const raw = localStorage.getItem(`lernhilfen_sheet_qr_${groupName.trim()}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.darkColor) {
+        return {
+          ...getDefaultQrDesignSettings(),
+          ...parsed,
+          borderDecoration: parsed.borderDecoration || 'school_grid',
+        };
+      }
+    }
+  } catch (e) {}
+  // Default for worksheet: school_grid or corner_accents with indigo / violet theme
+  const globalDefault = getQrDesignSettings();
+  return {
+    ...globalDefault,
+    borderDecoration: globalDefault.borderDecoration || 'school_grid',
+  };
+}
+
+/**
+ * Saves a customized QR design for a Master Worksheet Group.
+ */
+export function saveWorksheetQrDesign(groupName: string, settings: QrDesignSettings): void {
+  if (!groupName) return;
+  try {
+    localStorage.setItem(`lernhilfen_sheet_qr_${groupName.trim()}`, JSON.stringify(settings));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('qr-design-changed', { detail: settings }));
+    }
+  } catch (e) {
+    console.error('Failed to save worksheet QR design:', e);
+  }
+}
+
+/**
  * Converts an uploaded photo/image into a crisp sketch line drawing using custom color and style.
  */
 export async function processUploadedImageAsSketch(

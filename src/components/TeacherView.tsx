@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Lernhilfe } from '../types';
 import { LaTeXRenderer } from '../utils/latexRenderer';
+import { sortWorksheetItems } from '../utils/worksheetOrder';
 import {
   Plus,
   Search,
@@ -169,7 +170,15 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
     });
   }, [items, searchTerm, selectedSubject, selectedGrade, selectedGroup]);
 
-  // Grouped breakdown
+  // Order version state to react to worksheet reordering
+  const [orderVersion, setOrderVersion] = useState(0);
+  useEffect(() => {
+    const handleOrderChange = () => setOrderVersion((v) => v + 1);
+    window.addEventListener('worksheet-order-updated', handleOrderChange);
+    return () => window.removeEventListener('worksheet-order-updated', handleOrderChange);
+  }, []);
+
+  // Grouped breakdown sorted by teacher-defined order
   const groupedData = useMemo(() => {
     const groups: { name: string; items: Lernhilfe[] }[] = [];
     const ungrouped: Lernhilfe[] = [];
@@ -177,7 +186,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
     existingGroups.forEach((grpName) => {
       const inGroup = filteredItems.filter((i) => i.group_name === grpName);
       if (inGroup.length > 0) {
-        groups.push({ name: grpName, items: inGroup });
+        groups.push({ name: grpName, items: sortWorksheetItems(grpName, inGroup) });
       }
     });
 
@@ -188,7 +197,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
     });
 
     return { groups, ungrouped };
-  }, [filteredItems, existingGroups]);
+  }, [filteredItems, existingGroups, orderVersion]);
 
   // Reusable Single Task Card Component
   const renderCard = (item: Lernhilfe) => {
@@ -600,16 +609,20 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {/* Print Entire Worksheet QR-Sheet */}
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                    {/* Master- & Einzel-QR-Codes for this worksheet */}
                     {onOpenWorksheetQr && (
                       <button
                         type="button"
                         onClick={() => onOpenWorksheetQr(name, groupItems)}
-                        className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 active:scale-98 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                        className="px-3 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 active:scale-98 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                        title="Master-QR-Code (1 Code für alle Aufgaben), Reihenfolge sortieren oder Bogen drucken"
                       >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Arbeitsblatt QR-Bogen drucken ({groupItems.length})</span>
+                        <QrCode className="w-3.5 h-3.5 text-purple-200 shrink-0" />
+                        <span>Master-QR-Code</span>
+                        <span className="px-1.5 py-0.5 bg-white/20 text-white rounded-md text-[10px] font-black shrink-0">
+                          {groupItems.length}
+                        </span>
                       </button>
                     )}
 
@@ -618,10 +631,10 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                       type="button"
                       onClick={() => onCreateNew(name)}
                       title={`Weitere Aufgabe zu "${name}" hinzufügen`}
-                      className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+                      className="px-2.5 sm:px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span className="hidden md:inline">Teilaufgabe ergänzen</span>
+                      <span className="hidden sm:inline">Aufgabe +</span>
                     </button>
 
                     {/* Manage / Delete / Dissolve Worksheet Group */}
@@ -629,10 +642,10 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                       type="button"
                       onClick={() => setGroupToDelete({ name, items: groupItems })}
                       title={`Themen- / Arbeitsblatt-Gruppe „${name}“ verwalten oder löschen`}
-                      className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors"
+                      className="px-2.5 sm:px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 border border-slate-200 dark:border-slate-800 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden md:inline">Gruppe auflösen / löschen</span>
+                      <span className="hidden sm:inline">Verwalten</span>
                     </button>
                   </div>
                 </div>

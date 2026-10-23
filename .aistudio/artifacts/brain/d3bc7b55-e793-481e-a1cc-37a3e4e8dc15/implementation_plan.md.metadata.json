@@ -1,6 +1,6 @@
 {
-  "summary": "Umfassender Implementierungsplan für die Web-App 'Digitale QR-Lernhilfen / Gestufte Tippkarten' mit getrennter Schüler- und Lehreransicht, PIN-Sperre, KaTeX- und MathLive-Formelunterstützung, Multimedia (Canvas-Bildkompression, Audio-Recorder, YouTube, GeoGebra, H5P), KI-gestützter Tippgenerierung via Gemini API und hybridem Supabase-/LocalStorage-Backend.",
-  "updatedAt": "2026-10-14T17:30:57.882288540Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Optimierung des Master-QR-Codes, der Arbeitsblatt-Schüleransicht und des Modal-Designs abgeschlossen:\n- Entfernung von 'Teilaufgabe 1/2' Pill-Badges: Jede Lernhilfe wird nun prominent mit ihrer Überschrift (Aufgabennummer) angezeigt.\n- Direkte Einbettung des Aufgabentextes mit LaTeX-Formel-Rendering unter der Überschrift.\n- Klare Extra-Info-Badges: Exakte Anzahl der Tippkarten und deutlicher PIN-Schutz-Hinweis ('Tipps mit PIN geschützt').\n- Lehrkraft-Einstellung für Reihenfolge: Neuer interaktiver Reiter 'Reihenfolge' im Modal mit Hoch/Runter-Verschiebung und automatischer Sortierung nach Nummern (1, 2, 3...).\n- Platzoptimierung des Arbeitsblatt-Buttons in der TeacherView ('Master-QR-Code' mit kompakter Zähler-Pille).\n- Neugestaltung der Reiter im Modal (Master-QR, Einzel-Codes, Reihenfolge) ohne gequetschte Texte.",
+  "updatedAt":  "2026-10-23T16:21:32.350302117Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }

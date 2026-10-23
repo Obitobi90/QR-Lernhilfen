@@ -49,6 +49,8 @@ interface StudentViewProps {
   onClosePreview?: () => void;
   darkMode?: boolean;
   onToggleDarkMode?: () => void;
+  fromWorksheet?: string;
+  onBackToWorksheet?: () => void;
 }
 
 export const StudentView: React.FC<StudentViewProps> = ({
@@ -57,6 +59,8 @@ export const StudentView: React.FC<StudentViewProps> = ({
   onClosePreview,
   darkMode,
   onToggleDarkMode,
+  fromWorksheet,
+  onBackToWorksheet,
 }) => {
   // Revealed hints count.
   // If item.disclosure_mode === 'all_visible', all hints are directly visible (collapsed).
@@ -848,7 +852,18 @@ export const StudentView: React.FC<StudentViewProps> = ({
       {/* Top Navigation Bar / Controls */}
       <div className={`mx-auto mb-4 sm:mb-6 ${desktopLayout === 'split' ? 'max-w-6xl xl:max-w-7xl' : 'max-w-3xl'}`}>
         <div className="flex items-center justify-between no-print gap-2 py-1">
-          {isTeacherPreview && onClosePreview ? (
+          {onBackToWorksheet ? (
+            <button
+              type="button"
+              onClick={onBackToWorksheet}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900 border border-purple-200 dark:border-purple-800 rounded-xl transition-colors shadow-2xs"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span className="truncate max-w-[200px] sm:max-w-xs">
+                {fromWorksheet ? `← Zurück zu „${fromWorksheet}“` : '← Zurück zum Arbeitsblatt'}
+              </span>
+            </button>
+          ) : isTeacherPreview && onClosePreview ? (
             <button
               onClick={onClosePreview}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-2xs"

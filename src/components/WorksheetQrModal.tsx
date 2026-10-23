@@ -1,13 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lernhilfe } from '../types';
-import { renderStyledQrCode, getEffectiveQrDesign } from '../utils/qrCodeTheme';
+import { Lernhilfe, QrDesignSettings } from '../types';
+import {
+  renderStyledQrCode,
+  getEffectiveQrDesign,
+  getWorksheetQrDesign,
+  saveWorksheetQrDesign,
+} from '../utils/qrCodeTheme';
 import { LaTeXRenderer } from '../utils/latexRenderer';
 import {
+  shortenUrl,
   shortenUrlsBatch,
   getCachedShortUrl,
   formatDisplayShortUrl,
 } from '../utils/urlShortener';
-import { buildStudentUrl, isLocalhost, getCustomBaseUrl } from '../utils/appUrl';
+import {
+  buildStudentUrl,
+  buildWorksheetStudentUrl,
+  isLocalhost,
+  getCustomBaseUrl,
+} from '../utils/appUrl';
+import {
+  sortWorksheetItems,
+  saveWorksheetOrder,
+  naturalTitleCompare,
+} from '../utils/worksheetOrder';
+import { QrCodeDesigner } from './QrCodeDesigner';
 import {
   X,
   Printer,
@@ -23,6 +40,15 @@ import {
   RefreshCw,
   Smartphone,
   AlertTriangle,
+  QrCode,
+  Palette,
+  Eye,
+  Sliders,
+  CheckCircle2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Lock,
 } from 'lucide-react';
 
 interface WorksheetQrModalProps {
@@ -30,6 +56,7 @@ interface WorksheetQrModalProps {
   items: Lernhilfe[];
   onClose: () => void;
   onOpenPreview: (id: string) => void;
+  onOpenWorksheetPortal?: (groupName: string) => void;
 }
 
 export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
@@ -37,13 +64,54 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   items,
   onClose,
   onOpenPreview,
+  onOpenWorksheetPortal,
 }) => {
+  // Mode: 'master' (1 Master QR-Code), 'individual' (Ein eigener QR-Code je Aufgabe), or 'order' (Reihenfolge anpassen)
+  const [activeTab, setActiveTab] = useState<'master' | 'individual' | 'order'>('master');
+
+  // Sorted items according to teacher order
+  const [orderedItems, setOrderedItems] = useState<Lernhilfe[]>(() =>
+    sortWorksheetItems(groupName, items)
+  );
+
+  useEffect(() => {
+    setOrderedItems(sortWorksheetItems(groupName, items));
+  }, [items, groupName]);
+
+  const handleMoveItem = (index: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= orderedItems.length) return;
+    const copy = [...orderedItems];
+    const [removed] = copy.splice(index, 1);
+    copy.splice(newIndex, 0, removed);
+    setOrderedItems(copy);
+    saveWorksheetOrder(groupName, copy.map((i) => i.id));
+  };
+
+  const handleResetToNaturalOrder = () => {
+    const copy = [...orderedItems].sort(naturalTitleCompare);
+    setOrderedItems(copy);
+    saveWorksheetOrder(groupName, copy.map((i) => i.id));
+  };
+
+  // Master QR Design state & customizer toggle
+  const [masterDesign, setMasterDesign] = useState<QrDesignSettings>(() =>
+    getWorksheetQrDesign(groupName)
+  );
+  const [isCustomizingMaster, setIsCustomizingMaster] = useState<boolean>(false);
+
+  // Master Canvas Ref
+  const masterCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [masterShortUrl, setMasterShortUrl] = useState<string>('');
+  const [copiedMasterLink, setCopiedMasterLink] = useState<boolean>(false);
+  const [copiedMasterImg, setCopiedMasterImg] = useState<boolean>(false);
+
+  // Individual task canvases and short URLs
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedImgId, setCopiedImgId] = useState<string | null>(null);
-  const canvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+  const individualCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
 
-  // Shortened URLs cache per task ID
-  const [shortUrls, setShortUrls] = useState<Record<string, string>>(() => {
+  const [individualShortUrls, setIndividualShortUrls] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     items.forEach((item) => {
       const studentUrl = buildStudentUrl(item.id);
@@ -53,7 +121,21 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
     return initial;
   });
 
-  // Fetch short URLs for all items on sheet
+  const masterLongUrl = buildWorksheetStudentUrl(groupName);
+
+  // 1. Fetch Master Short URL
+  useEffect(() => {
+    const cached = getCachedShortUrl(masterLongUrl);
+    if (cached) {
+      setMasterShortUrl(cached);
+    } else {
+      shortenUrl(masterLongUrl).then((short: string) => {
+        if (short) setMasterShortUrl(short);
+      });
+    }
+  }, [masterLongUrl]);
+
+  // 2. Fetch short URLs for all individual items
   useEffect(() => {
     let isCancelled = false;
     const urlMap: Record<string, string> = {};
@@ -65,55 +147,121 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
       longUrls.push(studentUrl);
     });
 
-    shortenUrlsBatch(longUrls).then((results) => {
-      if (isCancelled) return;
-      const updated: Record<string, string> = {};
-      Object.entries(results).forEach(([longUrl, short]) => {
-        const itemId = urlMap[longUrl];
-        if (itemId) {
-          updated[itemId] = short;
-        }
+    shortenUrlsBatch(longUrls)
+      .then((results) => {
+        if (isCancelled) return;
+        const updated: Record<string, string> = {};
+        Object.entries(results).forEach(([longUrl, short]) => {
+          const itemId = urlMap[longUrl];
+          if (itemId) {
+            updated[itemId] = short;
+          }
+        });
+        setIndividualShortUrls((prev) => ({ ...prev, ...updated }));
+      })
+      .catch((err) => {
+        console.warn('Failed to load short URLs:', err);
       });
-      setShortUrls((prev) => ({ ...prev, ...updated }));
-    }).catch((err) => {
-      console.warn('Failed to load short URLs:', err);
-    });
 
     return () => {
       isCancelled = true;
     };
   }, [items]);
 
-  const renderAllQrs = () => {
+  // 3. Render Master QR Code
+  const renderMasterQr = () => {
+    if (masterCanvasRef.current) {
+      renderStyledQrCode(masterCanvasRef.current, masterLongUrl, {
+        size: 320,
+        customSettings: masterDesign,
+      }).catch((err) => {
+        console.error('Master QR generation error:', err);
+      });
+    }
+  };
+
+  // 4. Render Individual QR Codes
+  const renderAllIndividualQrs = () => {
     items.forEach((item) => {
-      const canvas = canvasRefs.current[item.id];
+      const canvas = individualCanvasRefs.current[item.id];
       if (canvas) {
         const studentUrl = buildStudentUrl(item.id);
         renderStyledQrCode(canvas, studentUrl, {
           size: 240,
           customSettings: getEffectiveQrDesign(item),
         }).catch((error) => {
-          if (error) console.error('QR code generation error:', error);
+          if (error) console.error('Individual QR generation error:', error);
         });
       }
     });
   };
 
   useEffect(() => {
-    renderAllQrs();
+    if (activeTab === 'master') {
+      renderMasterQr();
+    } else {
+      renderAllIndividualQrs();
+    }
+  }, [activeTab, masterDesign, groupName, items]);
 
+  useEffect(() => {
     const handleDesignChange = () => {
-      renderAllQrs();
+      if (activeTab === 'master') {
+        renderMasterQr();
+      } else {
+        renderAllIndividualQrs();
+      }
     };
 
     window.addEventListener('qr-design-changed', handleDesignChange);
     return () => {
       window.removeEventListener('qr-design-changed', handleDesignChange);
     };
-  }, [items]);
+  }, [activeTab, masterDesign, items]);
 
-  const handleCopyLink = async (item: Lernhilfe) => {
-    const targetUrl = shortUrls[item.id] || buildStudentUrl(item.id);
+  // Master Actions
+  const handleCopyMasterLink = async () => {
+    const target = masterShortUrl || masterLongUrl;
+    try {
+      await navigator.clipboard.writeText(target);
+      setCopiedMasterLink(true);
+      setTimeout(() => setCopiedMasterLink(false), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCopyMasterImage = async () => {
+    if (!masterCanvasRef.current) return;
+    try {
+      masterCanvasRef.current.toBlob(async (blob) => {
+        if (!blob) return;
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        setCopiedMasterImg(true);
+        setTimeout(() => setCopiedMasterImg(false), 2000);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDownloadMasterImage = () => {
+    if (!masterCanvasRef.current) return;
+    const url = masterCanvasRef.current.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Master-QR-Code_${groupName.replace(/[^a-zA-Z0-9_-]/g, '_')}.png`;
+    a.click();
+  };
+
+  const handleUpdateMasterDesign = (updated: QrDesignSettings) => {
+    setMasterDesign(updated);
+    saveWorksheetQrDesign(groupName, updated);
+  };
+
+  // Individual Actions
+  const handleCopyIndividualLink = async (item: Lernhilfe) => {
+    const targetUrl = individualShortUrls[item.id] || buildStudentUrl(item.id);
     try {
       await navigator.clipboard.writeText(targetUrl);
       setCopiedId(item.id);
@@ -123,15 +271,13 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
     }
   };
 
-  const handleCopyImage = async (item: Lernhilfe) => {
-    const canvas = canvasRefs.current[item.id];
+  const handleCopyIndividualImage = async (item: Lernhilfe) => {
+    const canvas = individualCanvasRefs.current[item.id];
     if (!canvas) return;
     try {
       canvas.toBlob(async (blob) => {
         if (!blob) return;
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'image/png': blob }),
-        ]);
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
         setCopiedImgId(item.id);
         setTimeout(() => setCopiedImgId(null), 2000);
       });
@@ -154,13 +300,13 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 no-print">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-semibold text-purple-600 dark:text-purple-400">
-                  Arbeitsblatt-QR-Bogen
+                <span className="text-xs font-bold text-purple-600 dark:text-purple-400">
+                  Arbeitsblatt-QR
                 </span>
                 <span className="text-xs text-slate-400">·</span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -177,33 +323,73 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              <span>QR-Bogen drucken</span>
+              <span>Drucken / PDF</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+              className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Info Banner */}
-        <div className="px-5 py-3 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex items-center justify-between gap-3 no-print">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
-            <span>
-              Dieses Arbeitsblatt enthält <strong>{items.length} {items.length === 1 ? 'Aufgabe' : 'Aufgaben'}</strong> mit jeweils individuellen gestuften Tippkarten und <strong>gekürzten Direkt-URLs</strong>.
-            </span>
+        {/* Mode Selector Tabs (Master vs Individual vs Order) */}
+        <div className="px-5 pt-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-start gap-2 no-print overflow-x-auto">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('master');
+                setIsCustomizingMaster(false);
+              }}
+              className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                activeTab === 'master'
+                  ? 'border-purple-600 text-purple-700 dark:text-purple-300 bg-white dark:bg-slate-900 shadow-2xs'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              <span>Master-QR</span>
+              <span className="px-1.5 py-0.2 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-[10px] font-extrabold uppercase shrink-0">
+                1 Code
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('individual')}
+              className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                activeTab === 'individual'
+                  ? 'border-indigo-600 text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 shadow-2xs'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span>Einzel-Codes</span>
+              <span className="px-1.5 py-0.2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-[10px] font-bold shrink-0">
+                {orderedItems.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('order')}
+              className={`px-3.5 py-2 text-xs font-bold rounded-t-xl transition-all border-b-2 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                activeTab === 'order'
+                  ? 'border-emerald-600 text-emerald-700 dark:text-emerald-300 bg-white dark:bg-slate-900 shadow-2xs'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <span>Reihenfolge</span>
+            </button>
           </div>
-          <span className="text-[11px] text-slate-400 hidden md:inline">
-            Tipp: Schüler ohne QR-Scanner tippen einfach den kurzen Link im Smartphone-Browser ein.
-          </span>
         </div>
 
         {/* Smartphone localhost warning */}
@@ -212,170 +398,454 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             <div className="flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <span>
-                <strong>Hinweis für Smartphone-Tests:</strong> Du bist über <code>localhost</code> verbunden. QR-Codes mit <code>localhost</code> führen auf Smartphones zu einer weißen Seite. Trage im Einzel-QR-Dialog deine WLAN-IP ein.
+                <strong>Hinweis:</strong> Du bist über <code>localhost</code> verbunden. QR-Codes mit <code>localhost</code> funktionieren nur auf diesem Rechner.
               </span>
             </div>
           </div>
         )}
 
-        {/* Scrollable Printable Content Area */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body">
-          {/* Print-only Header */}
-          <div className="hidden print:block text-center pb-4 border-b border-slate-400 mb-4">
-            <div className="text-[11px] uppercase tracking-wider text-slate-600 font-extrabold mb-1">
-              Digitale Tippkarten &amp; Hilfen zum Arbeitsblatt
-            </div>
-            <h1 className="text-2xl font-black text-black mb-1">{groupName}</h1>
-            <p className="text-xs text-slate-700">
-              {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code mit der Smartphone-Kamera oder tippe die Direkt-URL im Browser ein.
-            </p>
-          </div>
+        {/* Modal Scrollable Content */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body flex-1">
+          {activeTab === 'master' ? (
+            /* ======================================================== */
+            /* TAB 1: MASTER QR-CODE FOR THE ENTIRE WORKSHEET           */
+            /* ======================================================== */
+            <div className="space-y-6">
+              {/* Teacher Guidance Card */}
+              <div className="p-4 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-900/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+                <div className="space-y-1">
+                  <h4 className="font-extrabold text-sm text-purple-900 dark:text-purple-200 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-purple-600" />
+                    <span>Ein einziger Master-QR-Code für alle {items.length} Teilaufgaben</span>
+                  </h4>
+                  <p className="text-xs text-purple-800/80 dark:text-purple-300/80 leading-relaxed max-w-xl">
+                    Drucke diesen einen QR-Code auf dein Arbeitsblatt. Scannt ein Schüler den Code, landet er auf der digitalen Arbeitsblatt-Übersicht und wählt bequem aus, zu welcher Aufgabe er gestufte Hilfen benötigt.
+                  </p>
+                </div>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-5">
-            {items.map((item, idx) => {
-              return (
-                <div
-                  key={item.id}
-                  className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs print:border-2 print:border-slate-400 print:bg-white print:text-black print:shadow-none print:break-inside-avoid print:p-3.5 print-card"
-                >
-                  {/* Card Title & Meta */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 print:text-slate-700">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-extrabold text-indigo-600 dark:text-indigo-400 print:text-black">
-                          Aufgabe {idx + 1}
-                        </span>
-                        {item.qr_design && (
-                          <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/60 print:hidden">
-                            Eigenes Design
-                          </span>
-                        )}
-                      </div>
-                      <span className="flex items-center gap-1 text-[11px] print:text-slate-700">
-                        <Layers className="w-3 h-3 text-slate-400 print:text-slate-700" />
-                        <span>{item.hints.length} {item.hints.length === 1 ? 'Tipp' : 'Tipps'}</span>
-                      </span>
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomizingMaster(!isCustomizingMaster)}
+                    className="px-3.5 py-2 bg-white dark:bg-slate-900 hover:bg-purple-100 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-2xs transition"
+                  >
+                    <Palette className="w-3.5 h-3.5" />
+                    <span>{isCustomizingMaster ? 'Designer schließen' : 'Master-Code gestalten'}</span>
+                  </button>
 
-                    {/* Full Title, never clamped */}
-                    <h4 className="font-extrabold text-slate-900 dark:text-slate-100 print:text-black text-sm leading-snug break-words">
-                      {item.title}
-                    </h4>
-
-                    {/* Written Task Context with Crisp Math Formula Rendering */}
-                    {item.task_context && (
-                      <div className="text-xs text-slate-700 dark:text-slate-300 break-words leading-relaxed bg-slate-50/80 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800/60 print:bg-slate-50 print:border print:border-slate-300 print:text-black print:p-2">
-                        <div className="text-[10px] uppercase font-bold text-slate-400 print:text-slate-600 mb-0.5">
-                          Aufgabenstellung:
-                        </div>
-                        <div className="text-xs print:text-black">
-                          <LaTeXRenderer content={item.task_context} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* QR Canvas (Strict Square Aspect Ratio, Never Distorted) */}
-                  <div className="my-3 flex flex-col items-center justify-center p-3 bg-white rounded-xl border border-slate-100 dark:border-slate-800 print:border-none print:p-1">
-                    <canvas
-                      ref={(el) => {
-                        canvasRefs.current[item.id] = el;
-                      }}
-                      width={240}
-                      height={240}
-                      style={{ width: '150px', height: '150px', aspectRatio: '1 / 1', display: 'block' }}
-                      className="rounded-lg mx-auto shrink-0 print:w-[130px] print:h-[130px]"
-                    />
-
-                    {/* Shortened Direct URL under the QR Code */}
-                    <div className="mt-2 w-full px-2 py-1.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-lg print:border print:border-slate-400 print:bg-white print:p-1.5 text-center">
-                      <div className="text-[9px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400 print:text-slate-700 mb-0.5 flex items-center justify-center gap-1">
-                        <Link2 className="w-2.5 h-2.5 text-indigo-500 print:hidden" />
-                        <span>Direkt-URL zur Tippkarte:</span>
-                      </div>
-                      <div className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400 print:text-[12px] print:text-black break-all select-all">
-                        {shortUrls[item.id] ? (
-                          <a
-                            href={shortUrls[item.id]}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="hover:underline text-indigo-700 dark:text-indigo-300 print:text-black print:no-underline font-extrabold"
-                            title="Tippkarten-Direktlink öffnen"
-                          >
-                            {formatDisplayShortUrl(shortUrls[item.id])}
-                          </a>
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-500 font-normal italic text-[11px] flex items-center justify-center gap-1.5 py-0.5">
-                            <RefreshCw className="w-3 h-3 animate-spin text-indigo-500 print:hidden" />
-                            <span>URL wird gekürzt...</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Controls / Footer */}
-                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-1 no-print">
+                  {onOpenWorksheetPortal && (
                     <button
                       type="button"
-                      onClick={() => handleCopyImage(item)}
-                      title="QR-Bild in Zwischenablage kopieren"
-                      className="px-2 py-1 text-[11px] font-medium bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center gap-1 transition-colors"
+                      onClick={() => onOpenWorksheetPortal(groupName)}
+                      className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-2xs transition"
                     >
-                      {copiedImgId === item.id ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          <span>Kopiert!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>Bild kopieren</span>
-                        </>
-                      )}
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Schüler-Menü testen</span>
                     </button>
+                  )}
+                </div>
+              </div>
 
-                    <div className="flex items-center gap-1">
+              {/* Master QR Designer Drawer */}
+              {isCustomizingMaster && (
+                <div className="p-4 bg-white dark:bg-slate-900 border-2 border-purple-300 dark:border-purple-700 rounded-2xl space-y-3 no-print animate-in fade-in">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <Palette className="w-4 h-4 text-purple-600" />
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                        Design für den Master-QR-Code anpassen
+                      </h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomizingMaster(false)}
+                      className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    >
+                      Fertig
+                    </button>
+                  </div>
+
+                  <QrCodeDesigner
+                    settings={masterDesign}
+                    onChange={handleUpdateMasterDesign}
+                    demoUrl={masterLongUrl}
+                    isIndividual={false}
+                  />
+                </div>
+              )}
+
+              {/* Main Master QR Presentation Box */}
+              <div className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col md:flex-row items-center justify-center gap-8 shadow-sm print:border-none print:shadow-none print:p-0">
+                {/* Left: QR Canvas */}
+                <div className="flex flex-col items-center gap-3 shrink-0">
+                  <div className="p-3 bg-white rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md flex items-center justify-center print:border-none print:shadow-none">
+                    <canvas
+                      ref={masterCanvasRef}
+                      width={320}
+                      height={320}
+                      className="w-56 h-56 sm:w-64 sm:h-64 object-contain max-w-full"
+                    />
+                  </div>
+                  <span className="text-[11px] font-semibold text-slate-400 no-print">
+                    Hochauflösend (320px) · Für gestochen scharfen Druck
+                  </span>
+                </div>
+
+                {/* Right: Info, Links, and Quick Copy Actions */}
+                <div className="space-y-4 max-w-md w-full">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                      Sammel-Code für das Arbeitsblatt
+                    </span>
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 leading-snug">
+                      {groupName}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Umfasst alle {items.length} Teilaufgaben
+                    </p>
+                  </div>
+
+                  {/* Short Link Display */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>Kurz-Link für Schüler:</span>
+                      </span>
+                      {copiedMasterLink && (
+                        <span className="text-emerald-600 font-bold text-[11px] flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>Kopiert!</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={masterShortUrl ? formatDisplayShortUrl(masterShortUrl) : masterLongUrl}
+                        className="flex-1 px-3 py-1.5 text-xs font-mono font-bold bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-800 dark:text-slate-200 select-all"
+                      />
                       <button
                         type="button"
-                        onClick={() => handleCopyLink(item)}
-                        title="Link kopieren"
-                        className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        onClick={handleCopyMasterLink}
+                        title="Link in Zwischenablage kopieren"
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-lg border border-indigo-200 dark:border-indigo-800 transition"
                       >
-                        {copiedId === item.id ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Primary Export Actions for Worksheet Creation */}
+                  <div className="space-y-2 pt-1 no-print">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                      In Word, LibreOffice oder Pages einfügen:
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {/* Button 1: Copy Image Directly */}
+                      <button
+                        type="button"
+                        onClick={handleCopyMasterImage}
+                        className="p-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2"
+                      >
+                        {copiedMasterImg ? (
+                          <>
+                            <Check className="w-4 h-4 text-emerald-300" />
+                            <span>QR-Bild kopiert!</span>
+                          </>
                         ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>QR-Bild kopieren (Strg+V)</span>
+                          </>
                         )}
                       </button>
 
+                      {/* Button 2: Download PNG */}
                       <button
                         type="button"
-                        onClick={() => onOpenPreview(item.id)}
-                        title="Schüler-Vorschau öffnen"
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        onClick={handleDownloadMasterImage}
+                        className="p-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <Download className="w-4 h-4" />
+                        <span>PNG herunterladen</span>
                       </button>
                     </div>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
 
-        {/* Modal Footer */}
-        <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 no-print">
-          <span>{items.length} QR-Codes auf diesem Bogen</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold rounded-lg transition-colors"
-          >
-            Schließen
-          </button>
+              {/* Tasks Included Overview in this Master Sheet */}
+              <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-purple-600" />
+                    <span>Im Master-QR-Code enthaltene Aufgaben ({orderedItems.length}):</span>
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('order')}
+                    className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span>Reihenfolge anpassen</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {orderedItems.map((it, idx) => (
+                    <div
+                      key={it.id}
+                      className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 block truncate">
+                          {idx + 1}. {it.title}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {it.hints.length} {it.hints.length === 1 ? 'Tipp' : 'Tipps'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenPreview(it.id)}
+                        title="Vorschau dieser Aufgabe ansehen"
+                        className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+                      >
+                        Vorschau
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : activeTab === 'individual' ? (
+            /* ======================================================== */
+            /* TAB 2: INDIVIDUAL QR-CODES PER TASK                      */
+            /* ======================================================== */
+            <div className="space-y-6">
+              {/* Print-only Header */}
+              <div className="hidden print:block text-center pb-4 border-b border-slate-400 mb-4">
+                <div className="text-[11px] uppercase tracking-wider text-slate-600 font-extrabold mb-1">
+                  Digitale Tippkarten &amp; Hilfen zum Arbeitsblatt
+                </div>
+                <h1 className="text-2xl font-black text-black mb-1">{groupName}</h1>
+                <p className="text-xs text-slate-700">
+                  {subject} {gradeLevel ? `· ${gradeLevel}` : ''} · Scanne den QR-Code der jeweiligen Aufgabe mit der Smartphone-Kamera.
+                </p>
+              </div>
+
+              {/* Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid-cols-2 print:gap-5">
+                {orderedItems.map((item, idx) => {
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-xs print:border-2 print:border-slate-400 print:bg-white print:text-black print:shadow-none print:break-inside-avoid print:p-3.5 print-card"
+                    >
+                      {/* Card Title & Meta */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 print:text-slate-700">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-indigo-600 dark:text-indigo-400 print:text-black">
+                              Aufgabe {idx + 1}
+                            </span>
+                            {item.qr_design && (
+                              <span className="text-[10px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-1.5 py-0.2 rounded border border-purple-200 dark:border-purple-800/60 print:hidden">
+                                Eigener Style
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] font-semibold print:text-black">
+                            {item.hints.length} {item.hints.length === 1 ? 'Tipp' : 'Tipps'}
+                          </span>
+                        </div>
+
+                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm line-clamp-2 leading-snug print:text-black print:text-sm">
+                          {item.title}
+                        </h4>
+
+                        {item.task_context && (
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-normal print:hidden">
+                            <LaTeXRenderer content={item.task_context} className="text-[11px]" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* QR Code Canvas */}
+                      <div className="my-3 flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 print:border-none print:bg-white print:p-0">
+                        <canvas
+                          ref={(el) => {
+                            individualCanvasRefs.current[item.id] = el;
+                          }}
+                          width={240}
+                          height={240}
+                          className="w-40 h-40 object-contain print:w-44 print:h-44"
+                        />
+
+                        {/* Short URL print display */}
+                        <div className="mt-1 text-center font-mono font-bold text-[10px] text-slate-600 dark:text-slate-400 print:text-black print:text-[11px]">
+                          {individualShortUrls[item.id]
+                            ? formatDisplayShortUrl(individualShortUrls[item.id])
+                            : buildStudentUrl(item.id)}
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons (No-print) */}
+                      <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800 no-print">
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyIndividualImage(item)}
+                            className="flex-1 py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] rounded-lg border border-indigo-200 dark:border-indigo-800/80 transition flex items-center justify-center gap-1 shadow-2xs"
+                          >
+                            {copiedImgId === item.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Kopiert!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Bild</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyIndividualLink(item)}
+                            className="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-[11px] rounded-lg transition flex items-center justify-center gap-1"
+                          >
+                            {copiedId === item.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Kopiert!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Link2 className="w-3 h-3" />
+                                <span>Link</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => onOpenPreview(item.id)}
+                            title="Schüleransicht öffnen"
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* ======================================================== */
+            /* TAB 3: TASK ORDERING & SEQUENCE                          */
+            /* ======================================================== */
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <ArrowUpDown className="w-4 h-4 text-emerald-600" />
+                    <span>Reihenfolge der Lernhilfen festlegen</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Bestimme hier, in welcher Reihenfolge die Aufgaben den Schülern nach dem Scannen des Master-QR-Codes angezeigt werden.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetToNaturalOrder}
+                  className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors self-start sm:self-auto cursor-pointer"
+                  title="Nach Aufgabennummern sortieren (Aufgabe 1, 2, 3...)"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Nach Nummern sortieren (1, 2, 3...)</span>
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {orderedItems.map((item, index) => {
+                  const hintCount = item.hints.length;
+                  const hasPin = item.hints.some((h) => !!h.pin && h.pin.trim().length > 0);
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3.5 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between gap-3 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs flex items-center justify-center shrink-0">
+                          {index + 1}.
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">
+                              {item.title}
+                            </h5>
+                            {hasPin && (
+                              <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.2 rounded border border-amber-200 dark:border-amber-800/60">
+                                <Lock className="w-2.5 h-2.5" />
+                                <span>PIN</span>
+                              </span>
+                            )}
+                            <span className="text-[11px] text-slate-400">
+                              · {hintCount} {hintCount === 1 ? 'Tipp' : 'Tipps'}
+                            </span>
+                          </div>
+                          {item.task_context && (
+                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-lg mt-0.5">
+                              {item.task_context}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveItem(index, 'up')}
+                          disabled={index === 0}
+                          title="Nach oben verschieben"
+                          className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleMoveItem(index, 'down')}
+                          disabled={index === orderedItems.length - 1}
+                          title="Nach unten verschieben"
+                          className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  Jede Änderung wird automatisch gespeichert und ist sofort im Master-QR-Code und im Schüler-Portal aktiv.
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

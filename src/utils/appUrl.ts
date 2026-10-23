@@ -74,6 +74,25 @@ export function buildStudentUrl(lernhilfeId: string): string {
 }
 
 /**
+ * Builds the complete URL to open the Master Worksheet Portal for a group of tasks (?sheet=...)
+ */
+export function buildWorksheetStudentUrl(groupName: string): string {
+  const base = getEffectiveBaseUrl();
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  return `${base}${path}?sheet=${encodeURIComponent(groupName)}`;
+}
+
+/**
+ * Builds a student URL that remembers which worksheet portal the student came from
+ */
+export function buildStudentUrlWithSheet(lernhilfeId: string, groupName?: string): string {
+  const base = getEffectiveBaseUrl();
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const sheetParam = groupName ? `&sheet=${encodeURIComponent(groupName)}` : '';
+  return `${base}${path}?id=${encodeURIComponent(lernhilfeId)}${sheetParam}`;
+}
+
+/**
  * Fetches server local network IP information if available (from backend server.ts)
  */
 export async function fetchServerNetworkInfo(): Promise<{
