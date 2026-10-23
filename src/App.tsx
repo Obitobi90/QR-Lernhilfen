@@ -392,7 +392,7 @@ export default function App() {
     const itemToDelete = items.find((i) => i.id === id);
     // Optimistically remove from list immediately
     setItems((prev) => prev.filter((i) => i.id !== id));
-    showToast(`„${itemToDelete?.title || 'Lernhilfe'}“ wurde gelöscht.`, 'info');
+    showToast(`„${itemToDelete?.title || 'Lernhilfe'}“ wurde gelöscht (auf Smartphone & Cloud synchronisiert).`, 'info');
 
     try {
       await deleteLernhilfe(id);

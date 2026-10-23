@@ -3,6 +3,42 @@ import { Lernhilfe, SupabaseSettings } from '../types';
 
 const STORAGE_KEY_SETTINGS = 'lernhilfen_supabase_settings';
 const STORAGE_KEY_ITEMS = 'lernhilfen_local_items_v1';
+const STORAGE_KEY_DELETED = 'lernhilfen_deleted_ids_v1';
+
+export function getDeletedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        return new Set(list.map((x) => String(x).trim()));
+      }
+    }
+  } catch (e) {}
+  return new Set<string>();
+}
+
+export function markIdAsDeleted(id: string): void {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return;
+  try {
+    const set = getDeletedIds();
+    set.add(cleanId);
+    localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
+
+export function unmarkDeletedId(id: string): void {
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return;
+  try {
+    const set = getDeletedIds();
+    if (set.has(cleanId)) {
+      set.delete(cleanId);
+      localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(Array.from(set)));
+    }
+  } catch (e) {}
+}
 
 const syncBroadcast = typeof window !== 'undefined' && 'BroadcastChannel' in window
   ? new BroadcastChannel('lernhilfen_sync_bus')
@@ -174,6 +210,39 @@ export function saveSupabaseSettings(settings: SupabaseSettings): void {
 
 let cachedSupabase: SupabaseClient | null = null;
 let currentConfigKey = '';
+let realtimeChannel: any = null;
+
+function setupRealtimeListener(client: SupabaseClient) {
+  try {
+    if (realtimeChannel) {
+      realtimeChannel.unsubscribe();
+      realtimeChannel = null;
+    }
+    realtimeChannel = client
+      .channel('lernhilfen_realtime_deletions')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lernhilfen' },
+        (payload: any) => {
+          if (payload?.eventType === 'DELETE') {
+            const delId = payload.old?.id;
+            if (delId) {
+              const cleanId = String(delId).trim();
+              markIdAsDeleted(cleanId);
+              const localItems = getLocalLernhilfen().filter(
+                (x) => String(x.id).trim() !== cleanId
+              );
+              saveLocalLernhilfen(localItems);
+            }
+          }
+          notifySyncChange();
+        }
+      )
+      .subscribe();
+  } catch (e) {
+    // Realtime channel fallback
+  }
+}
 
 export function getSupabaseClient(): SupabaseClient | null {
   const settings = getSupabaseSettings();
@@ -194,6 +263,7 @@ export function getSupabaseClient(): SupabaseClient | null {
       },
     });
     currentConfigKey = key;
+    setupRealtimeListener(cachedSupabase);
     return cachedSupabase;
   } catch (e) {
     console.error('Failed to initialize Supabase client:', e);
@@ -331,13 +401,19 @@ export async function checkSupabaseSchemaHealth(): Promise<SchemaHealthResult> {
 // Unified Database API (Server Disk Store + LocalStorage + Supabase Cloud)
 export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
   const settings = getSupabaseSettings();
-  const localItems = getLocalLernhilfen();
+  const deletedIds = getDeletedIds();
+  const localItems = getLocalLernhilfen().filter((it) => it && it.id && !deletedIds.has(String(it.id).trim()));
   const supabase = getSupabaseClient();
 
   const mergedMap = new Map<string, Lernhilfe>();
-  // 1. Start with local items
+  // 1. Start with local items (strictly excluding already deleted ones)
   localItems.forEach((it) => {
-    if (it && it.id) mergedMap.set(it.id, it);
+    if (it && it.id) {
+      const cleanId = String(it.id).trim();
+      if (!deletedIds.has(cleanId)) {
+        mergedMap.set(cleanId, it);
+      }
+    }
   });
 
   // 2. Fetch from server disk store (/api/lernhilfen) - ensures sync across all devices on the same app
@@ -345,17 +421,34 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
     const res = await fetch('/api/lernhilfen');
     if (res.ok) {
       const data = await res.json();
+
+      // Ingest remote server tombstones (items deleted on PC)
+      if (Array.isArray(data?.deletedIds)) {
+        data.deletedIds.forEach((delId: string) => {
+          const cleanDel = String(delId).trim();
+          if (cleanDel) {
+            deletedIds.add(cleanDel);
+            markIdAsDeleted(cleanDel);
+            mergedMap.delete(cleanDel);
+          }
+        });
+      }
+
       if (Array.isArray(data?.items)) {
         data.items.forEach((srvItem: Lernhilfe) => {
           if (srvItem && srvItem.id) {
-            const existing = mergedMap.get(srvItem.id);
+            const cleanId = String(srvItem.id).trim();
+            // Skip deleted items completely
+            if (deletedIds.has(cleanId)) return;
+
+            const existing = mergedMap.get(cleanId);
             if (!existing) {
-              mergedMap.set(srvItem.id, srvItem);
+              mergedMap.set(cleanId, srvItem);
             } else {
               const srvTime = new Date(srvItem.updated_at || srvItem.created_at || 0).getTime();
               const locTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
               if (srvTime >= locTime) {
-                mergedMap.set(srvItem.id, srvItem);
+                mergedMap.set(cleanId, srvItem);
               }
             }
           }
@@ -388,11 +481,35 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
             })
           );
         }
-      } else if (Array.isArray(data) && data.length > 0) {
+      } else if (Array.isArray(data)) {
+        const cloudIds = new Set(data.map((row: any) => String(row.id).trim()));
+
+        // Authoritative Cloud Deletion Reconciliation:
+        // If a local item was in localStorage, but is no longer present in Supabase,
+        // and it was created more than 15 seconds ago (not in the middle of being drafted),
+        // it was deleted on another device (e.g. desktop PC).
+        // Automatically purge it so smartphones delete it without resurrection!
+        localItems.forEach((localIt) => {
+          const cleanLocalId = String(localIt.id).trim();
+          if (!cloudIds.has(cleanLocalId)) {
+            const createdAt = new Date(localIt.created_at || 0).getTime();
+            const isJustCreated = Date.now() - createdAt < 15000;
+            if (!isJustCreated) {
+              deletedIds.add(cleanLocalId);
+              markIdAsDeleted(cleanLocalId);
+              mergedMap.delete(cleanLocalId);
+            }
+          }
+        });
+
         data.forEach((row: any) => {
           if (row && row.id) {
+            const cleanId = String(row.id).trim();
+            // Skip if item is marked deleted
+            if (deletedIds.has(cleanId)) return;
+
             const cloudItem: Lernhilfe = {
-              id: String(row.id),
+              id: cleanId,
               title: row.title || 'Ohne Titel',
               subject: row.subject || 'Allgemein',
               grade_level: row.grade_level || undefined,
@@ -406,14 +523,14 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
               updated_at: row.updated_at || new Date().toISOString(),
             };
 
-            const existing = mergedMap.get(cloudItem.id);
+            const existing = mergedMap.get(cleanId);
             if (!existing) {
-              mergedMap.set(cloudItem.id, cloudItem);
+              mergedMap.set(cleanId, cloudItem);
             } else {
               const cloudTime = new Date(cloudItem.updated_at || cloudItem.created_at || 0).getTime();
               const curTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
               if (cloudTime >= curTime) {
-                mergedMap.set(cloudItem.id, cloudItem);
+                mergedMap.set(cleanId, cloudItem);
               }
             }
           }
@@ -424,16 +541,19 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
     }
   }
 
-  const mergedList = Array.from(mergedMap.values()).sort((a, b) => {
-    const timeA = new Date(b.created_at || 0).getTime();
-    const timeB = new Date(a.created_at || 0).getTime();
-    return timeA - timeB;
-  });
+  const finalDeleted = getDeletedIds();
+  const mergedList = Array.from(mergedMap.values())
+    .filter((it) => it && it.id && !finalDeleted.has(String(it.id).trim()))
+    .sort((a, b) => {
+      const timeA = new Date(b.created_at || 0).getTime();
+      const timeB = new Date(a.created_at || 0).getTime();
+      return timeA - timeB;
+    });
 
   // Save merged result back to localStorage
   saveLocalLernhilfen(mergedList);
 
-  // Sync any items that might only exist locally back to server in background
+  // Sync legitimate items back to server in background (EXCLUDING deleted items)
   try {
     fetch('/api/lernhilfen', {
       method: 'POST',
@@ -511,14 +631,19 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
 }
 
 export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
+  const cleanId = String(item.id).trim();
+  // If this item was previously marked deleted, unmark it as it is being actively saved
+  unmarkDeletedId(cleanId);
+
   const updatedItem: Lernhilfe = {
     ...item,
+    id: cleanId,
     updated_at: new Date().toISOString(),
   };
 
   // Always update local storage first so UI is immediately updated and offline resilient
   const localItems = getLocalLernhilfen();
-  const existingIdx = localItems.findIndex((x) => x.id === item.id);
+  const existingIdx = localItems.findIndex((x) => String(x.id).trim() === cleanId);
   if (existingIdx >= 0) {
     localItems[existingIdx] = updatedItem;
   } else {
@@ -669,25 +794,31 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
 }
 
 export async function deleteLernhilfe(id: string): Promise<void> {
-  // Delete from local storage immediately
-  const localItems = getLocalLernhilfen().filter((x) => x.id !== id);
+  const cleanId = String(id || '').trim();
+  if (!cleanId) return;
+
+  // 1. Mark as tombstone deleted ID immediately so this device and other devices never resurrect it
+  markIdAsDeleted(cleanId);
+
+  // 2. Delete from local storage immediately
+  const localItems = getLocalLernhilfen().filter((x) => String(x.id).trim() !== cleanId);
   saveLocalLernhilfen(localItems);
 
-  // Delete from server disk store
+  // 3. Delete from server disk store (and record server tombstone)
   try {
-    fetch(`/api/lernhilfen/${encodeURIComponent(id)}`, {
+    await fetch(`/api/lernhilfen/${encodeURIComponent(cleanId)}`, {
       method: 'DELETE',
     }).catch(() => {});
   } catch (e) {
     console.warn('Could not delete item from server store:', e);
   }
 
-  // Delete from Supabase if explicitly enabled
+  // 4. Delete from Supabase if explicitly enabled
   const supabase = getSupabaseClient();
   const settings = getSupabaseSettings();
   if (settings.enabled && supabase) {
     try {
-      const { error } = await supabase.from('lernhilfen').delete().eq('id', id);
+      const { error } = await supabase.from('lernhilfen').delete().eq('id', cleanId);
       if (error) {
         console.warn('Supabase delete error:', error);
       }

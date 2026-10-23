@@ -717,28 +717,37 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                  Lernhilfe unwiderruflich löschen?
+                  Lernhilfe wirklich löschen?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Möchtest du diese Lernhilfe wirklich löschen? Der dazugehörige QR-Code verliert seine Gültigkeit und Schüler können die Tippkarten nicht mehr aufrufen.
+                  Bist du sicher, dass du <strong>„{itemToDelete.title}“</strong> unwiderruflich löschen möchtest?
                 </p>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 text-xs space-y-1">
-              <div className="font-bold text-slate-800 dark:text-slate-200">
-                {itemToDelete.title}
+            <div className="p-3.5 bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/80 dark:border-rose-900/40 rounded-xl text-xs space-y-2">
+              <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-semibold text-[11px]">
+                <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                <span>Wird automatisch auch auf verbundenen Smartphones &amp; Cloud gelöscht</span>
               </div>
-              <div className="text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap text-[11px]">
-                <span className="font-medium text-indigo-600 dark:text-indigo-400">
-                  {itemToDelete.subject || 'Allgemein'}
-                </span>
-                {itemToDelete.grade_level && <span>· {itemToDelete.grade_level}</span>}
-                {itemToDelete.group_name && <span>· 📋 {itemToDelete.group_name}</span>}
-                <span>
-                  · {itemToDelete.hints.length} {itemToDelete.hints.length === 1 ? 'Tipp' : 'Tipps'}
-                </span>
+              <div className="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 space-y-1">
+                <div className="font-bold text-slate-900 dark:text-slate-100 text-xs">
+                  {itemToDelete.title}
+                </div>
+                <div className="text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap text-[11px]">
+                  <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                    {itemToDelete.subject || 'Allgemein'}
+                  </span>
+                  {itemToDelete.grade_level && <span>· {itemToDelete.grade_level}</span>}
+                  {itemToDelete.group_name && <span>· 📋 {itemToDelete.group_name}</span>}
+                  <span>
+                    · {itemToDelete.hints.length} {itemToDelete.hints.length === 1 ? 'Tipp' : 'Tipps'}
+                  </span>
+                </div>
               </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                Der dazugehörige Schüler-QR-Code und der Code verfallen sofort.
+              </p>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -759,7 +768,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                 className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-98 rounded-xl shadow-xs flex items-center gap-1.5 transition-all"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>Lernhilfe löschen</span>
+                <span>Ja, Lernhilfe löschen</span>
               </button>
             </div>
           </div>
@@ -826,7 +835,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                     Arbeitsblatt samt allen {groupToDelete.items.length} Aufgaben löschen
                   </span>
                   <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80 block mt-0.5 leading-relaxed">
-                    Löscht die Gruppierung und alle {groupToDelete.items.length} enthaltenen Lernhilfen unwiderruflich.
+                    Löscht die Gruppierung und alle {groupToDelete.items.length} enthaltenen Lernhilfen unwiderruflich auf PC, Smartphone &amp; Cloud.
                   </span>
                 </div>
               </button>

@@ -24,6 +24,7 @@ import {
   ZoomIn,
   Move,
   Wand2,
+  X,
 } from 'lucide-react';
 
 interface QrCodeDesignerProps {
@@ -42,6 +43,7 @@ export const QrCodeDesigner: React.FC<QrCodeDesignerProps> = ({
   onResetToGlobalDefault,
 }) => {
   const [uploading, setUploading] = useState<boolean>(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Live render QR Preview on canvas whenever settings or demoUrl changes
@@ -108,7 +110,8 @@ export const QrCodeDesigner: React.FC<QrCodeDesignerProps> = ({
         logoFit: 'contain',
       });
     } catch (err: any) {
-      alert('Bild-Verarbeitung fehlgeschlagen: ' + err.message);
+      console.error('Bild-Verarbeitung fehlgeschlagen:', err);
+      setUploadError('Bild-Verarbeitung fehlgeschlagen: ' + (err?.message || 'Unbekannter Fehler'));
     } finally {
       setUploading(false);
     }
@@ -512,6 +515,19 @@ export const QrCodeDesigner: React.FC<QrCodeDesignerProps> = ({
                   </button>
                 </div>
               </div>
+
+              {uploadError && (
+                <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 text-xs rounded-xl flex items-center justify-between gap-2">
+                  <span>{uploadError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setUploadError(null)}
+                    className="p-1 hover:bg-rose-100 dark:hover:bg-rose-900 rounded-lg text-rose-500"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
               {/* Advanced controls if image is uploaded */}
               {settings.rawUploadedImage && (

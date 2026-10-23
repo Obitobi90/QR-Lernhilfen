@@ -252,7 +252,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         handleExtractText(compressed.dataUrl);
       }
     } catch (err: any) {
-      alert('Bild konnte nicht verarbeitet werden: ' + err.message);
+      console.error('Bildverarbeitungsfehler:', err);
+      setExtractError('Bild konnte nicht verarbeitet werden: ' + (err?.message || 'Unbekannter Fehler'));
     }
   };
 
@@ -303,7 +304,6 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   // Remove hint
   const handleRemoveHint = (index: number) => {
     if (hints.length <= 1) {
-      alert('Eine Lernhilfe sollte mindestens einen Tipp enthalten.');
       return;
     }
     const updated = hints.filter((_, idx) => idx !== index);
@@ -392,7 +392,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         mediaData: targetUrl,
       });
     } catch (err: any) {
-      alert('Fehler bei der Bildkompression: ' + err.message);
+      console.error('Fehler bei der Bildkompression:', err);
     }
   };
 

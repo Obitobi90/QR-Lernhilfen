@@ -819,17 +819,25 @@ const INITIAL_SERVER_ITEMS = [
 ];
 
 let itemsDb: any[] = [];
+let deletedIdsDb: Set<string> = new Set<string>();
+
 try {
   if (fs.existsSync(ITEMS_FILE)) {
     const raw = fs.readFileSync(ITEMS_FILE, 'utf-8');
-    itemsDb = JSON.parse(raw);
-    if (!Array.isArray(itemsDb) || itemsDb.length === 0) {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      itemsDb = parsed.length > 0 ? parsed : INITIAL_SERVER_ITEMS;
+    } else if (parsed && typeof parsed === 'object') {
+      itemsDb = Array.isArray(parsed.items) && parsed.items.length > 0 ? parsed.items : INITIAL_SERVER_ITEMS;
+      if (Array.isArray(parsed.deletedIds)) {
+        deletedIdsDb = new Set(parsed.deletedIds.map((id: any) => String(id).trim()));
+      }
+    } else {
       itemsDb = INITIAL_SERVER_ITEMS;
-      fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
     }
   } else {
     itemsDb = INITIAL_SERVER_ITEMS;
-    fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
+    saveItemsToDisk();
   }
 } catch (e) {
   itemsDb = INITIAL_SERVER_ITEMS;
@@ -837,40 +845,69 @@ try {
 
 function saveItemsToDisk() {
   try {
-    fs.writeFileSync(ITEMS_FILE, JSON.stringify(itemsDb, null, 2), 'utf-8');
+    fs.writeFileSync(
+      ITEMS_FILE,
+      JSON.stringify(
+        {
+          items: itemsDb,
+          deletedIds: Array.from(deletedIdsDb),
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
   } catch (e) {
     console.warn('Could not save items to disk:', e);
   }
 }
 
-// 1. Get all Lernhilfen
+// 1. Get all Lernhilfen and deleted IDs (for multi-device sync)
 app.get('/api/lernhilfen', (_req, res) => {
-  return res.json({ items: itemsDb });
+  return res.json({
+    items: itemsDb,
+    deletedIds: Array.from(deletedIdsDb),
+  });
 });
 
-// 2. Get specific Lernhilfe by id
+// 2. Get deleted IDs list specifically
+app.get('/api/lernhilfen/deleted', (_req, res) => {
+  return res.json({ deletedIds: Array.from(deletedIdsDb) });
+});
+
+// 3. Get specific Lernhilfe by id
 app.get('/api/lernhilfen/:id', (req, res) => {
-  const item = itemsDb.find((i) => i.id === req.params.id);
+  const item = itemsDb.find((i) => String(i.id) === String(req.params.id));
   if (!item) {
     return res.status(404).json({ error: 'Lernhilfe nicht gefunden' });
   }
   return res.json({ item });
 });
 
-// 3. Save or update Lernhilfe (supports single item or batch sync)
+// 4. Save or update Lernhilfe (supports single item or batch sync)
 app.post('/api/lernhilfen', (req, res) => {
   const body = req.body;
   if (body?.batch && Array.isArray(body.batch)) {
     const itemMap = new Map<string, any>();
-    itemsDb.forEach((it) => itemMap.set(it.id, it));
+    itemsDb.forEach((it) => itemMap.set(String(it.id), it));
+
     body.batch.forEach((it: any) => {
       if (it?.id && it?.title) {
-        itemMap.set(it.id, it);
+        const cleanId = String(it.id).trim();
+        // CRITICAL: Never re-add / resurrect an item that has been deleted on any device
+        if (!deletedIdsDb.has(cleanId)) {
+          itemMap.set(cleanId, it);
+        }
       }
     });
+
     itemsDb = Array.from(itemMap.values());
     saveItemsToDisk();
-    return res.json({ success: true, count: itemsDb.length });
+    return res.json({
+      success: true,
+      count: itemsDb.length,
+      deletedIds: Array.from(deletedIdsDb),
+    });
   }
 
   const newItem = body;
@@ -878,12 +915,17 @@ app.post('/api/lernhilfen', (req, res) => {
     return res.status(400).json({ error: 'Ungültige Daten' });
   }
 
-  const idx = itemsDb.findIndex((i) => i.id === newItem.id);
+  const cleanId = String(newItem.id).trim();
+  // If an item is explicitly re-saved / recreated by teacher, remove from deleted tombstones
+  deletedIdsDb.delete(cleanId);
+
+  const idx = itemsDb.findIndex((i) => String(i.id) === cleanId);
   if (idx >= 0) {
-    itemsDb[idx] = { ...newItem, updated_at: new Date().toISOString() };
+    itemsDb[idx] = { ...newItem, id: cleanId, updated_at: new Date().toISOString() };
   } else {
     itemsDb.unshift({
       ...newItem,
+      id: cleanId,
       created_at: newItem.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -892,12 +934,28 @@ app.post('/api/lernhilfen', (req, res) => {
   return res.json({ success: true, item: newItem });
 });
 
-// 4. Delete Lernhilfe by id
+// 5. Delete Lernhilfe by id (tracks tombstone to prevent smartphone zombie resurrection)
 app.delete('/api/lernhilfen/:id', (req, res) => {
   const { id } = req.params;
-  itemsDb = itemsDb.filter((i) => i.id !== id);
+  const cleanId = String(id).trim();
+
+  // Add to deleted tombstone set
+  deletedIdsDb.add(cleanId);
+  itemsDb = itemsDb.filter((i) => String(i.id) !== cleanId);
+
+  // Also clean up stats and votes for this deleted item
+  if (statsDb[cleanId]) {
+    delete statsDb[cleanId];
+  }
+  for (const key of Object.keys(votesDb)) {
+    if (key.startsWith(`${cleanId}:::`)) {
+      delete votesDb[key];
+    }
+  }
+
   saveItemsToDisk();
-  return res.json({ success: true });
+  saveStatsToDisk();
+  return res.json({ success: true, deletedId: cleanId });
 });
 
 // ==========================================
