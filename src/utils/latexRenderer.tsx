@@ -132,14 +132,11 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({
                       setInternalGlossaryModal({ term, definition });
                     }
                   }}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/90 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 rounded-md cursor-pointer transition-all active:scale-95 shadow-2xs text-inherit align-baseline"
+                  className="inline-flex items-baseline px-1 py-0.5 mx-0.5 font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50/80 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 rounded-md cursor-pointer transition-colors active:scale-95 shadow-2xs text-inherit align-baseline"
                   title={definition ? definition : `Fachbegriff: ${term}`}
                 >
                   <span className="underline decoration-dotted decoration-indigo-500 dark:decoration-indigo-400 underline-offset-4 decoration-2">
                     {term}
-                  </span>
-                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400 select-none opacity-80" aria-hidden="true">
-                    ✨
                   </span>
                 </button>
               );

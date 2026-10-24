@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Lernhilfe, Hint } from '../types';
 import { LaTeXRenderer } from '../utils/latexRenderer';
+import { PinCodeInput } from './PinCodeInput';
 import { parseYouTubeUrl, parseGeoGebraUrl, parseH5PUrl, getGeoGebraDimensions } from '../utils/mediaParser';
 import {
   ChevronDown,
@@ -248,9 +249,9 @@ export const StudentView: React.FC<StudentViewProps> = ({
     }
   };
 
-  const handlePinSubmit = (hintId: string, expectedPin: string) => {
-    const input = pinInputs[hintId] || '';
-    if (input.trim() === expectedPin.trim()) {
+  const handlePinSubmit = (hintId: string, expectedPin: string, enteredCode?: string) => {
+    const input = (enteredCode !== undefined ? enteredCode : (pinInputs[hintId] || '')).trim();
+    if (input === expectedPin.trim()) {
       setUnlockedPins((prev) => ({ ...prev, [hintId]: true }));
       setPinErrors((prev) => ({ ...prev, [hintId]: false }));
       // Automatically expand once unlocked
@@ -518,45 +519,18 @@ export const StudentView: React.FC<StudentViewProps> = ({
                       </p>
                     </div>
 
-                    {/* PIN Input Form */}
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="password"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          maxLength={4}
-                          value={pinInputs[hint.id] || ''}
-                          onChange={(e) => {
-                            const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                            setPinInputs((prev) => ({ ...prev, [hint.id]: val }));
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handlePinSubmit(hint.id, hint.pin!);
-                            }
-                          }}
-                          placeholder="••••"
-                          className={`w-28 sm:w-32 px-3 py-2 text-center text-lg sm:text-xl font-mono tracking-widest bg-white dark:bg-slate-950 border rounded-xl focus:outline-none focus:ring-2 ${
-                            isError
-                              ? 'border-red-500 text-red-600 ring-red-500 animate-shake'
-                              : 'border-slate-300 dark:border-slate-700 focus:ring-indigo-500'
-                          }`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handlePinSubmit(hint.id, hint.pin!)}
-                          className="px-4 py-2 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-xs transition-colors"
-                        >
-                          Freischalten
-                        </button>
-                      </div>
-                      {isError && (
-                        <span className="text-xs text-red-500 font-medium">
-                          Falscher Code! Bitte noch einmal prüfen.
-                        </span>
-                      )}
-                    </div>
+                    {/* 4-Box PIN Input Form (One box per digit, no smartphone password autofill) */}
+                    <PinCodeInput
+                      hintId={hint.id}
+                      expectedPin={hint.pin!}
+                      isError={isError}
+                      onSubmit={(enteredCode) => handlePinSubmit(hint.id, hint.pin!, enteredCode)}
+                      onClearError={() => {
+                        if (pinErrors[hint.id]) {
+                          setPinErrors((prev) => ({ ...prev, [hint.id]: false }));
+                        }
+                      }}
+                    />
                   </div>
                 ) : (
                   /* Fully Visible Hint Body */
