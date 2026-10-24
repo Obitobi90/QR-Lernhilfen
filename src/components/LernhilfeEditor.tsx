@@ -14,6 +14,7 @@ import { uploadMediaToSupabase } from '../utils/supabaseClient';
 import { MathFormulaHelper } from './MathFormulaHelper';
 import { AudioRecorder } from './AudioRecorder';
 import { LaTeXRenderer } from '../utils/latexRenderer';
+import { generateOfflineDefinitionsBatch } from '../utils/didacticGlossaryEngine';
 import {
   getEffectiveQrDesign,
   getQrDesignSettings,
@@ -181,42 +182,74 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
     } else {
       setIsGeneratingGlossary(true);
     }
-    setGlossaryError(null);
-    setGlossarySuccess(null);
+    const effectiveGrade = (gradeLevel === 'custom' ? customGradeLevel.trim() : gradeLevel) || 'Klasse 8';
 
     try {
-      const res = await fetch('/api/gemini/generate-definitions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          terms: targetTerms,
-          subject,
-          gradeLevel: (gradeLevel === 'custom' ? customGradeLevel.trim() : gradeLevel) || 'Klasse 8',
-          context: taskContext,
-        }),
-      });
+      let definitions: Record<string, string> | null = null;
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Fehler beim Generieren der Definitionen');
+      try {
+        const res = await fetch('/api/gemini/generate-definitions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            terms: targetTerms,
+            subject,
+            gradeLevel: effectiveGrade,
+            context: taskContext,
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.definitions && typeof data.definitions === 'object') {
+            definitions = data.definitions;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('Network call to generate-definitions failed, using offline engine:', networkErr);
       }
 
-      const data = await res.json();
-      if (data.definitions && typeof data.definitions === 'object') {
+      // If backend was not reached or returned empty, generate using the offline didactic school engine
+      if (!definitions || Object.keys(definitions).length === 0) {
+        definitions = generateOfflineDefinitionsBatch(
+          targetTerms,
+          subject,
+          effectiveGrade,
+          taskContext
+        );
+      }
+
+      if (definitions && typeof definitions === 'object' && Object.keys(definitions).length > 0) {
         setGlossary((prev) => ({
           ...prev,
-          ...data.definitions,
+          ...definitions,
         }));
         setGlossarySuccess(
           termSpecific
-            ? `Definition für „${termSpecific}“ erfolgreich mit KI erstellt!`
-            : `Definitionen für ${targetTerms.length} Begriff(e) erfolgreich mit KI erstellt!`
+            ? `Definition für „${termSpecific}“ erfolgreich erstellt!`
+            : `Definitionen für ${targetTerms.length} Begriff(e) erfolgreich erstellt!`
         );
         setTimeout(() => setGlossarySuccess(null), 4000);
       }
     } catch (err: any) {
       console.error('Glossary error:', err);
-      setGlossaryError(err.message || 'Fehler bei der KI-Definitions-Generierung');
+      // Emergency fallback directly from local engine
+      const emergencyDefs = generateOfflineDefinitionsBatch(
+        targetTerms,
+        subject,
+        effectiveGrade,
+        taskContext
+      );
+      setGlossary((prev) => ({
+        ...prev,
+        ...emergencyDefs,
+      }));
+      setGlossarySuccess(
+        termSpecific
+          ? `Definition für „${termSpecific}“ erstellt!`
+          : `Definitionen für ${targetTerms.length} Begriff(e) erstellt!`
+      );
+      setTimeout(() => setGlossarySuccess(null), 4000);
     } finally {
       setIsGeneratingGlossary(false);
       setGeneratingTerm(null);
@@ -2028,7 +2061,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                    Wörter in doppelten eckigen Klammern wie <code className="bg-indigo-50 dark:bg-indigo-950 px-1 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">[[Fachbegriff]]</code> werden für Schüler gepunktet unterstrichen. Beim Antippen erscheint eine schülergerechte Mini-Definition – <em>ohne</em> dass ein Tipp verbraucht wird!
+                    Wörter in doppelten eckigen Klammern wie <code className="bg-indigo-50 dark:bg-indigo-950 px-1 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">[[Fachbegriff]]</code> werden für Schüler einfach gepunktet unterstrichen. Beim Antippen öffnet sich direkt die schülergerechte Definition.
                   </p>
                 </div>
               </div>

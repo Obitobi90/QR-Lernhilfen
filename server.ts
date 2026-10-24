@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { generateOfflineDefinitionsBatch } from './src/utils/didacticGlossaryEngine';
 
 dotenv.config();
 process.env.DISABLE_HMR = 'true';
@@ -260,16 +261,17 @@ app.post(['/api/gemini/generate-definitions', '/api/gemini/generate-definitions/
       return res.status(400).json({ error: 'Keine Fachbegriffe übergeben.' });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(400).json({
-        error: 'Kein GEMINI_API_KEY auf dem Server konfiguriert.',
-      });
-    }
-
     const cleanTerms = terms.map((t: any) => String(t).trim()).filter(Boolean);
     const targetSubject = subject ? String(subject).trim() : 'Mathematik';
     const targetGrade = gradeLevel ? String(gradeLevel).trim() : 'Klasse 8';
     const taskContextText = context ? String(context).trim() : '';
+
+    // If no API key is configured on server, directly use our offline didactic curriculum engine!
+    if (!process.env.GEMINI_API_KEY) {
+      console.log('No GEMINI_API_KEY configured; generating curriculum-aligned definitions via didactic glossary engine.');
+      const definitions = generateOfflineDefinitionsBatch(cleanTerms, targetSubject, targetGrade, taskContextText);
+      return res.json({ definitions, source: 'offline-engine' });
+    }
 
     const systemInstruction = `Du bist ein erfahrener Fachlehrer und Pädagoge für das Schulfach "${targetSubject}" an einer allgemeinbildenden Schule in Deutschland.
 Deine Aufgabe ist es, für Begriffe, die in einer Schüler-Aufgabe oder in gestuften Lernhilfen markiert wurden, eine prägnante, didaktisch hochwertige und schülergerechte Mini-Definition (1 bis maximal 3 Sätze) zu erstellen.
@@ -326,10 +328,27 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im Format:
     });
 
     const definitions = cleanAndParseJson<Record<string, string>>(rawText, {});
-    return res.json({ definitions: definitions || {} });
+    // Fall back for any missing terms to offline engine
+    const offlineFallback = generateOfflineDefinitionsBatch(cleanTerms, targetSubject, targetGrade, taskContextText);
+    const finalDefinitions = { ...offlineFallback, ...(definitions || {}) };
+
+    return res.json({ definitions: finalDefinitions });
   } catch (error: any) {
-    console.error('Error generating term definitions via Gemini:', error);
-    return res.status(500).json({ error: error.message || 'Failed to generate definitions' });
+    console.warn('Error generating term definitions via Gemini, falling back to didactic engine:', error.message || error);
+    // Never fail with 500: always provide didactic fallback
+    try {
+      const { terms, subject, gradeLevel, context } = req.body || {};
+      const cleanTerms = Array.isArray(terms) ? terms.map((t: any) => String(t).trim()).filter(Boolean) : [];
+      const definitions = generateOfflineDefinitionsBatch(
+        cleanTerms,
+        subject ? String(subject) : 'Mathematik',
+        gradeLevel ? String(gradeLevel) : 'Klasse 8',
+        context ? String(context) : ''
+      );
+      return res.json({ definitions, source: 'offline-engine-fallback' });
+    } catch {
+      return res.status(500).json({ error: error.message || 'Failed to generate definitions' });
+    }
   }
 });
 

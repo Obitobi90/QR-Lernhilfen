@@ -544,7 +544,12 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
               const cloudTime = new Date(cloudItem.updated_at || cloudItem.created_at || 0).getTime();
               const curTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
               if (cloudTime >= curTime) {
-                mergedMap.set(cleanId, cloudItem);
+                // Preserve local glossary if cloud column is null or not yet migrated
+                const preservedGlossary = cloudItem.glossary || existing.glossary;
+                mergedMap.set(cleanId, {
+                  ...cloudItem,
+                  glossary: preservedGlossary,
+                });
               }
             }
           }
@@ -620,7 +625,7 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
           disclosure_mode: data.disclosure_mode || 'stepped',
           hints: Array.isArray(data.hints) ? data.hints : [],
           qr_design: data.qr_design || undefined,
-          glossary: data.glossary || undefined,
+          glossary: data.glossary || localItems.find((x) => String(x.id).trim() === id)?.glossary || undefined,
           created_at: data.created_at || new Date().toISOString(),
           updated_at: data.updated_at || new Date().toISOString(),
         };
@@ -693,6 +698,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
         disclosure_mode: updatedItem.disclosure_mode || 'stepped',
         hints: updatedItem.hints || [],
         qr_design: updatedItem.qr_design || null,
+        glossary: updatedItem.glossary || null,
         updated_at: updatedItem.updated_at,
       };
 

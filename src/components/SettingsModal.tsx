@@ -533,6 +533,7 @@ CREATE TABLE IF NOT EXISTS public.lernhilfen (
   disclosure_mode TEXT DEFAULT 'stepped',
   hints JSONB NOT NULL DEFAULT '[]'::jsonb,
   qr_design JSONB,
+  glossary JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -550,6 +551,7 @@ ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFAULT 'stepped';
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS hints JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS glossary JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
