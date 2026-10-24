@@ -267,21 +267,46 @@ app.post(['/api/gemini/generate-definitions', '/api/gemini/generate-definitions/
     }
 
     const cleanTerms = terms.map((t: any) => String(t).trim()).filter(Boolean);
-    const validSubject = subject || 'Schulfach';
+    const targetSubject = subject ? String(subject).trim() : 'Mathematik';
+    const targetGrade = gradeLevel ? String(gradeLevel).trim() : 'Klasse 8';
+    const taskContextText = context ? String(context).trim() : '';
 
-    const systemInstruction = `Du bist ein erfahrener Fachlehrer für das Schulfach ${validSubject} in der Sekundarstufe (${gradeLevel || 'Mittelstufe / Oberstufe'}).
-Deine Aufgabe ist es, für schulische Fachbegriffe eine prägnante, schülergerechte Mini-Definition zu verfassen.
+    const systemInstruction = `Du bist ein erfahrener Fachlehrer und Pädagoge für das Schulfach "${targetSubject}" an einer allgemeinbildenden Schule in Deutschland.
+Deine Aufgabe ist es, für Begriffe, die in einer Schüler-Aufgabe oder in gestuften Lernhilfen markiert wurden, eine prägnante, didaktisch hochwertige und schülergerechte Mini-Definition (1 bis maximal 3 Sätze) zu erstellen.
 
-DIDAKTISCHE REGELN:
-1. Länge: Genau 1 bis maximal 3 leicht verständliche Sätze pro Begriff.
-2. Stil: Didaktisch klar, ohne verschachteltes Fachchinesisch, passend für Schüler.
-3. Falls es sich um Mathematik handelt, dürfen kurze LaTeX-Formeln in $...$ verwendet werden (z. B. $S(d|e)$ oder $a^2+b^2=c^2$).
-4. Beginne direkt mit der sachlichen Erklärung, ohne einleitendes "Dieser Begriff bedeutet..." oder Höflichkeitsfloskeln.
-5. Kontext der Aufgabe beachten (falls angegeben): ${context || 'Allgemeiner Fachunterricht'}.
+ZIELGRUPPE & RAHMENBEDINGUNGEN:
+- Schulfach: ${targetSubject} (zulässige Fächer: Mathematik, Wirtschaft-Politik, Sozialwissenschaften)
+- Jahrgangsstufe / Klassenstufe: ${targetGrade}
+- Aufgabenkontext (falls vorhanden): "${taskContextText || 'Allgemeiner Fachunterricht'}"
 
-Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt, bei dem jeder angefragte Fachbegriff als Schlüssel und seine Mini-Definition als String-Wert hinterlegt ist:
+STRIKTE DIDAKTISCHE VORGABEN:
+
+1. FACHBEZUG (STRENG AUS DEM BLICKWINKEL DES FACHS "${targetSubject}"):
+   - Bei "Wirtschaft-Politik":
+     * Betrachte und erkläre den Begriff aus ökonomischer, politischer oder institutioneller Perspektive (z. B. "Fußball" als milliardenschwerer Wirtschaftszweig, Unterhaltungsindustrie, Markt für TV-Übertragungsrechte, Sponsoring und Vereine als Wirtschaftsunternehmen; "Markt" als Zusammentreffen von Angebot und Nachfrage; "Subsidiaritätsprinzip" als Kompetenzverteilung zwischen Staat und Bürgern).
+   - Bei "Sozialwissenschaften":
+     * Betrachte und erkläre den Begriff aus gesellschaftlicher, soziologischer oder sozialpolitischer Perspektive (z. B. "Fußball" als soziales Massenphänomen, Fankultur, Instrument zur gesellschaftlichen Integration und Identitätsstiftung; "Sozialstaat" als System zur Absicherung sozialer Lebensrisiken; "Ungleichheit" als ungleiche Verteilung von Lebenschancen).
+   - Bei "Mathematik":
+     * UNTERSCHEIDE STRIKT zwischen echten mathematischen Fachbegriffen und Alltagsbegriffen aus Textaufgaben:
+       a) ECHTE MATHEMATISCHE FACHBEGRIFFE (z. B. Scheitelpunkt, Hypotenuse, Kathete, Binomische Formeln, Scheitelform, Ableitung, Lineare Funktion, Wahrscheinlichkeit, Kongruenz):
+          -> Definiere sie mathematisch präzise und anschaulich. Falls didaktisch nützlich, dürfen kurze mathematische LaTeX-Formeln in $...$ verwendet werden (z. B. $a^2 + b^2 = c^2$, $S(d|e)$).
+       b) ALLTAGSBEGRIFFE & SACHKONTEXTE (z. B. Fußball, Leiter, Fahrrad, Schwimmbecken, Schifffahrt, Spielplatz):
+          -> NIEMALS künstliche mathematische Formeln aufzwingen (KEINE Kugelvolumen-Formeln für einen Fußball, es sei denn der Aufgabentext fragt explizit danach!).
+          -> Erkläre stattdessen den Alltagsbegriff kurz und verständlich und ordne ihn sachlich in den Kontext der Aufgabe ein (z. B. ein Fußball als Sportgerät bzw. Spielball, dessen Bewegung oder Flugbahn in der Aufgabe modelliert wird).
+
+2. SCHÜLERGERECHTE SPRACHE (DYNAMISCH ABGESTIMMT AUF DIE JAHRGANGSSTUFE "${targetGrade}"):
+   - Unterstufe (Klasse 5 - 6): Sehr anschaulich, einfache kindgerechte Worte, kurze Sätze, keine komplizierten Fremdwörter.
+   - Mittelstufe (Klasse 7 - 9): Klar, sachlich, didaktisch greifbar, alltagsnah, schrittweiser Aufbau von Fachbegriffen.
+   - Oberstufe (Klasse 10, EF, Q1, Q2, BBS): Fachwissenschaftlich fundiert, präzise Terminologie, theoriegeleitet und differenziert.
+
+3. FORMALE REGELN:
+   - Länge: Genau 1 bis maximal 3 Sätze.
+   - Direkt auf den Punkt: Starte direkt mit der Erklärung, ohne Floskeln wie "Dieser Begriff bedeutet..." oder Höflichkeitsanreden.
+   - Verständlich für Schüler, sodass sie nach dem Lesen sofort weiterarbeiten können, ohne ein Lexikon wälzen zu müssen.
+
+Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt im Format:
 {
-  "Begriff 1": "Kurze, klare didaktische Definition in 1-3 Sätzen.",
+  "Begriff 1": "Schülergerechte Definition in 1-3 Sätzen...",
   "Begriff 2": "..."
 }`;
 
@@ -289,7 +314,7 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt, bei dem jeder angefragte Fac
       contents: {
         parts: [
           {
-            text: `Bitte erstelle schülergerechte Mini-Definitionen für folgende Fachbegriffe im Fach ${validSubject}:\n${cleanTerms.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}`,
+            text: `Fach: ${targetSubject}\nJahrgangsstufe: ${targetGrade}\nAufgabenkontext: ${taskContextText || 'Keiner'}\n\nBitte erstelle die schülergerechten Mini-Definitionen für folgende Fachbegriffe:\n${cleanTerms.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}`,
           },
         ],
       },

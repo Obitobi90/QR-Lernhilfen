@@ -191,7 +191,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
         body: JSON.stringify({
           terms: targetTerms,
           subject,
-          gradeLevel: gradeLevel === 'custom' ? customGradeLevel : gradeLevel,
+          gradeLevel: (gradeLevel === 'custom' ? customGradeLevel.trim() : gradeLevel) || 'Klasse 8',
           context: taskContext,
         }),
       });
@@ -1095,20 +1095,24 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
               style={{ minHeight: '88px', overflowY: 'hidden' }}
             />
 
-            {/* Live KaTeX Math Formula Preview */}
-            {taskContext && (taskContext.includes('$') || taskContext.includes('\\')) && (
+            {/* Live KaTeX Math Formula & Glossary Preview */}
+            {taskContext && (taskContext.includes('$') || taskContext.includes('\\') || taskContext.includes('[[')) && (
               <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl space-y-1">
                 <div className="flex items-center justify-between text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
                   <span className="flex items-center gap-1.5">
-                    <Calculator className="w-3.5 h-3.5" />
-                    Mathematische Formel-Vorschau (KaTeX):
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Live-Vorschau (Formeln &amp; Fachbegriffe):</span>
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
                     Schüler-Ansicht
                   </span>
                 </div>
                 <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 pt-0.5">
-                  <LaTeXRenderer content={taskContext} />
+                  <LaTeXRenderer
+                    content={taskContext}
+                    glossary={glossary}
+                    onTermClick={(term, def) => setPreviewGlossaryModal({ term, definition: def })}
+                  />
                 </div>
               </div>
             )}
@@ -1509,13 +1513,18 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                       style={{ minHeight: '88px', overflowY: 'hidden' }}
                     />
 
-                    {/* Realtime KaTeX text preview if text exists */}
-                    {hint.text && (hint.text.includes('$') || hint.text.includes('\\')) && (
+                    {/* Realtime KaTeX text & glossary preview if text exists */}
+                    {hint.text && (hint.text.includes('$') || hint.text.includes('\\') || hint.text.includes('[[')) && (
                       <div className="p-2.5 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-xl text-xs text-slate-800 dark:text-slate-200 space-y-1">
-                        <span className="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 block">
-                          Formel-Vorschau:
+                        <span className="text-[10px] uppercase font-bold text-indigo-600 dark:text-indigo-400 block flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-indigo-500" />
+                          <span>Vorschau (Formeln &amp; Fachbegriffe):</span>
                         </span>
-                        <LaTeXRenderer content={hint.text} />
+                        <LaTeXRenderer
+                          content={hint.text}
+                          glossary={glossary}
+                          onTermClick={(term, def) => setPreviewGlossaryModal({ term, definition: def })}
+                        />
                       </div>
                     )}
                   </div>
@@ -2050,8 +2059,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                       type="button"
                       disabled={isGeneratingGlossary || detectedTerms.length === 0}
                       onClick={() => handleGenerateGlossaryAi()}
-                      className="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 rounded-xl shadow-xs flex items-center gap-2 transition-colors"
-                      title="Erstellt mit KI schülergerechte 1-3 Sätze Definitionen für alle erkannten Fachbegriffe"
+                      className="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 rounded-xl shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
+                      title={`Erstellt mit KI schülergerechte 1-3 Sätze Definitionen passend für Fach "${subject}" und "${gradeLevel === 'custom' ? customGradeLevel || 'Klasse' : gradeLevel}"`}
                     >
                       {isGeneratingGlossary ? (
                         <>
@@ -2065,6 +2074,12 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                         </>
                       )}
                     </button>
+
+                    <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
+                      <span>Fach: <strong className="text-indigo-600 dark:text-indigo-400">{subject}</strong></span>
+                      <span>·</span>
+                      <span>Stufe: <strong className="text-indigo-600 dark:text-indigo-400">{gradeLevel === 'custom' ? customGradeLevel || 'Eigene Stufe' : gradeLevel}</strong></span>
+                    </div>
                   </div>
 
                   {/* Manual add term */}
@@ -2448,19 +2463,14 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <span className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-yellow-300">
                   <Sparkles className="w-5 h-5" />
                 </span>
-                <div>
-                  <div className="text-xs uppercase font-bold tracking-wider text-indigo-200">
-                    Mini-Definition • Vorschau
-                  </div>
-                  <h3 className="text-lg font-bold leading-tight">
-                    {previewGlossaryModal.term}
-                  </h3>
-                </div>
+                <h3 className="text-lg font-bold leading-tight">
+                  {previewGlossaryModal.term}
+                </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setPreviewGlossaryModal(null)}
-                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 title="Schließen"
               >
                 <X className="w-5 h-5" />
@@ -2478,15 +2488,11 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
-                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Verbraucht keinen Schüler-Tipp!
-                </span>
+              <div className="flex items-center justify-end pt-1 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
                   onClick={() => setPreviewGlossaryModal(null)}
-                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-colors"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-colors cursor-pointer"
                 >
                   Schließen
                 </button>

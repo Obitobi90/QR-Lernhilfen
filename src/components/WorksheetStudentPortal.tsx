@@ -221,7 +221,7 @@ export const WorksheetStudentPortal: React.FC<WorksheetStudentPortalProps> = ({
                     {/* 2. Aufgabentext (falls vorhanden) direkt darunter */}
                     {item.task_context && item.task_context.trim().length > 0 && (
                       <div className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950/60 p-3 sm:p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
-                        <LaTeXRenderer content={item.task_context} className="text-xs sm:text-sm" />
+                        <LaTeXRenderer content={item.task_context} glossary={item.glossary} className="text-xs sm:text-sm" />
                       </div>
                     )}
 

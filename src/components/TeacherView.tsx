@@ -298,7 +298,7 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
                 Aufgabentext:
               </span>
               <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800 leading-relaxed whitespace-pre-wrap">
-                <LaTeXRenderer content={item.task_context} />
+                <LaTeXRenderer content={item.task_context} glossary={item.glossary} />
               </div>
             </div>
           )}

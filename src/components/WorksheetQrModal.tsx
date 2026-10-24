@@ -672,7 +672,7 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
 
                         {item.task_context && (
                           <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-normal print:hidden">
-                            <LaTeXRenderer content={item.task_context} className="text-[11px]" />
+                            <LaTeXRenderer content={item.task_context} glossary={item.glossary} className="text-[11px]" />
                           </div>
                         )}
                       </div>
