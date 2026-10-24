@@ -99,15 +99,8 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   const subjects = [
     'Alle',
     'Mathematik',
-    'Physik',
-    'Chemie',
-    'Biologie',
-    'Informatik',
-    'Sozialwissenschaften',
     'Wirtschaft-Politik',
-    'Deutsch',
-    'Englisch',
-    'Sonstiges',
+    'Sozialwissenschaften',
   ];
 
   // Distinct groups across all items

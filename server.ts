@@ -251,6 +251,63 @@ Antworte AUSSCHLIESSLICH als gültiges JSON-Array im folgenden Format:
   }
 });
 
+// Server-side AI Term Definitions Generation Endpoint (for [[Fachbegriffe]])
+app.post(['/api/gemini/generate-definitions', '/api/gemini/generate-definitions/', '/api/generate-definitions'], async (req, res) => {
+  try {
+    const { terms, subject, gradeLevel, context } = req.body;
+
+    if (!Array.isArray(terms) || terms.length === 0) {
+      return res.status(400).json({ error: 'Keine Fachbegriffe übergeben.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(400).json({
+        error: 'Kein GEMINI_API_KEY auf dem Server konfiguriert.',
+      });
+    }
+
+    const cleanTerms = terms.map((t: any) => String(t).trim()).filter(Boolean);
+    const validSubject = subject || 'Schulfach';
+
+    const systemInstruction = `Du bist ein erfahrener Fachlehrer für das Schulfach ${validSubject} in der Sekundarstufe (${gradeLevel || 'Mittelstufe / Oberstufe'}).
+Deine Aufgabe ist es, für schulische Fachbegriffe eine prägnante, schülergerechte Mini-Definition zu verfassen.
+
+DIDAKTISCHE REGELN:
+1. Länge: Genau 1 bis maximal 3 leicht verständliche Sätze pro Begriff.
+2. Stil: Didaktisch klar, ohne verschachteltes Fachchinesisch, passend für Schüler.
+3. Falls es sich um Mathematik handelt, dürfen kurze LaTeX-Formeln in $...$ verwendet werden (z. B. $S(d|e)$ oder $a^2+b^2=c^2$).
+4. Beginne direkt mit der sachlichen Erklärung, ohne einleitendes "Dieser Begriff bedeutet..." oder Höflichkeitsfloskeln.
+5. Kontext der Aufgabe beachten (falls angegeben): ${context || 'Allgemeiner Fachunterricht'}.
+
+Antworte AUSSCHLIESSLICH als gültiges JSON-Objekt, bei dem jeder angefragte Fachbegriff als Schlüssel und seine Mini-Definition als String-Wert hinterlegt ist:
+{
+  "Begriff 1": "Kurze, klare didaktische Definition in 1-3 Sätzen.",
+  "Begriff 2": "..."
+}`;
+
+    const rawText = await generateGeminiContentWithFallback({
+      contents: {
+        parts: [
+          {
+            text: `Bitte erstelle schülergerechte Mini-Definitionen für folgende Fachbegriffe im Fach ${validSubject}:\n${cleanTerms.map((t, idx) => `${idx + 1}. ${t}`).join('\n')}`,
+          },
+        ],
+      },
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
+
+    const definitions = cleanAndParseJson<Record<string, string>>(rawText, {});
+    return res.json({ definitions: definitions || {} });
+  } catch (error: any) {
+    console.error('Error generating term definitions via Gemini:', error);
+    return res.status(500).json({ error: error.message || 'Failed to generate definitions' });
+  }
+});
+
 // Server-side AI Task & Math Formula OCR Extraction Endpoint
 const ocrRoutePaths = [
   '/api/gemini/extract-task-text',

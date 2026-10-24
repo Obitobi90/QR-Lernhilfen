@@ -62,6 +62,7 @@ export interface Lernhilfe {
   task_image?: string;
   disclosure_mode?: DisclosureMode; // Gestufte Freischaltung ('stepped') oder alle Tipps direkt sichtbar ('all_visible')
   qr_design?: QrDesignSettings; // Individuelles QR-Code Design für diese spezifische Lernhilfe
+  glossary?: Record<string, string>; // Mini-Definitionen für [[Fachbegriffe]], z.B. { "Scheitelpunkt": "..." }
   hints: Hint[];
   created_at: string;
   updated_at: string;

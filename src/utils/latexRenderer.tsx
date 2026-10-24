@@ -4,19 +4,24 @@ import katex from 'katex';
 interface LaTeXRendererProps {
   content: string;
   className?: string;
+  glossary?: Record<string, string>;
+  onTermClick?: (term: string, definition: string) => void;
 }
 
 /**
  * Parses markdown/plain text and renders embedded LaTeX expressions.
- * Handles both block math: $$formula$$
- * and inline math: $formula$
+ * Handles both block math ($$...$$), inline math ($...$), and interactive [[Fachbegriffe]] (wiki-links).
  */
-export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ content, className = '' }) => {
+export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({
+  content,
+  className = '',
+  glossary,
+  onTermClick,
+}) => {
   const renderedElements = useMemo(() => {
     if (!content) return null;
 
     // Tokenize text into parts: block math ($$...$$), inline math ($...$), and standard text
-    // Regex matches $$...$$ or $...$ (ignoring escaped \$)
     const regex = /(\$\$[\s\S]+?\$\$|\$(?:\\\$|[^\$])+?\$)/g;
     const parts = content.split(regex);
 
@@ -47,7 +52,7 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ content, className
         }
       }
 
-      // Inline math: starts and ends with $ (must never split across lines)
+      // Inline math: starts and ends with $
       if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
         const math = part.slice(1, -1).trim();
         try {
@@ -76,20 +81,62 @@ export const LaTeXRenderer: React.FC<LaTeXRendererProps> = ({ content, className
         }
       }
 
-      // Standard text: preserve line breaks
+      // Standard text: preserve line breaks and parse interactive [[Fachbegriff]] wiki-links
       const textLines = part.split('\n');
       return (
         <span key={`text-${index}`}>
-          {textLines.map((line, lineIdx) => (
-            <React.Fragment key={`line-${lineIdx}`}>
-              {line}
-              {lineIdx < textLines.length - 1 && <br />}
-            </React.Fragment>
-          ))}
+          {textLines.map((line, lineIdx) => {
+            const termRegex = /\[\[(.*?)\]\]/g;
+            const segments: React.ReactNode[] = [];
+            let lastIndex = 0;
+            let match: RegExpExecArray | null;
+
+            while ((match = termRegex.exec(line)) !== null) {
+              const textBefore = line.substring(lastIndex, match.index);
+              if (textBefore) segments.push(textBefore);
+
+              const term = match[1]?.trim() || '';
+              const definition = glossary?.[term] || '';
+
+              segments.push(
+                <button
+                  key={`term-${index}-${lineIdx}-${match.index}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onTermClick) {
+                      onTermClick(term, definition);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 text-indigo-700 dark:text-indigo-300 font-bold bg-indigo-50/90 dark:bg-indigo-950/70 hover:bg-indigo-100 dark:hover:bg-indigo-900/80 rounded-md border-b-2 border-dotted border-indigo-400 dark:border-indigo-400 cursor-pointer transition-all active:scale-95 shadow-2xs text-inherit align-baseline"
+                  title={definition ? `Mini-Definition: ${definition}` : `Fachbegriff: ${term} (Tippen für Erklärung)`}
+                >
+                  <span className="underline decoration-dotted decoration-indigo-400 dark:decoration-indigo-400 underline-offset-3">
+                    {term}
+                  </span>
+                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400 select-none opacity-80" aria-hidden="true">
+                    ✨
+                  </span>
+                </button>
+              );
+
+              lastIndex = match.index + match[0].length;
+            }
+
+            const textAfter = line.substring(lastIndex);
+            if (textAfter) segments.push(textAfter);
+
+            return (
+              <React.Fragment key={`line-${lineIdx}`}>
+                {segments}
+                {lineIdx < textLines.length - 1 && <br />}
+              </React.Fragment>
+            );
+          })}
         </span>
       );
     });
-  }, [content]);
+  }, [content, glossary, onTermClick]);
 
   return <div className={`leading-relaxed ${className}`}>{renderedElements}</div>;
 };

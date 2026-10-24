@@ -114,6 +114,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
     text: string;
   } | null>(null);
 
+  // Active glossary term popover ({ term, definition })
+  const [activeGlossaryTerm, setActiveGlossaryTerm] = useState<{
+    term: string;
+    definition: string;
+  } | null>(null);
+
   // Reset states and record views if item changes
   useEffect(() => {
     setUnlockedCount(item.disclosure_mode === 'all_visible' ? item.hints.length : 1);
@@ -285,7 +291,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
             Aufgabenstellung:
           </span>
           <div className="leading-relaxed whitespace-pre-wrap">
-            <LaTeXRenderer content={item.task_context} className="text-sm sm:text-base lg:text-lg" />
+            <LaTeXRenderer
+              content={item.task_context}
+              glossary={item.glossary}
+              onTermClick={(term, definition) => setActiveGlossaryTerm({ term, definition })}
+              className="text-sm sm:text-base lg:text-lg"
+            />
           </div>
         </div>
       )}
@@ -553,7 +564,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
                     {/* LaTeX & Text content */}
                     {hint.text && (
                       <div className="text-slate-800 dark:text-slate-200 text-base sm:text-lg leading-relaxed whitespace-pre-wrap">
-                        <LaTeXRenderer content={hint.text} className="text-base sm:text-lg" />
+                        <LaTeXRenderer
+                          content={hint.text}
+                          glossary={item.glossary}
+                          onTermClick={(term, definition) => setActiveGlossaryTerm({ term, definition })}
+                          className="text-base sm:text-lg"
+                        />
                       </div>
                     )}
 
@@ -1066,6 +1082,74 @@ export const StudentView: React.FC<StudentViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Mini-Lexikon / Glossar Modal */}
+      {activeGlossaryTerm && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setActiveGlossaryTerm(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-indigo-200 dark:border-indigo-900/60 overflow-hidden flex flex-col animate-in zoom-in-95 sm:slide-in-from-bottom-2 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-yellow-300">
+                  <Sparkles className="w-5 h-5" />
+                </span>
+                <div>
+                  <div className="text-xs uppercase font-bold tracking-wider text-indigo-200">
+                    Mini-Definition • Kostenlos
+                  </div>
+                  <h3 className="text-lg font-bold leading-tight flex items-center gap-2">
+                    {activeGlossaryTerm.term}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveGlossaryTerm(null)}
+                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-5 space-y-4">
+              <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-4 text-slate-800 dark:text-slate-200 text-sm leading-relaxed">
+                {activeGlossaryTerm.definition ? (
+                  <LaTeXRenderer content={activeGlossaryTerm.definition} />
+                ) : (
+                  <p className="text-slate-500 italic">
+                    Für diesen Begriff wurde noch keine Definition hinterlegt.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Verbraucht keinen deiner Tipps!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveGlossaryTerm(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-colors"
+                >
+                  Verstanden
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

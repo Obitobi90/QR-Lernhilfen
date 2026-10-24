@@ -56,6 +56,7 @@ import {
   Palette,
   ChevronDown,
   ChevronUp,
+  BookOpen,
 } from 'lucide-react';
 
 interface LernhilfeEditorProps {
@@ -91,12 +92,16 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const initialGrade = initialItem?.grade_level || 'Klasse 8';
   const isPresetGrade = standardGrades.includes(initialGrade);
 
+  const allowedSubjects = ['Mathematik', 'Wirtschaft-Politik', 'Sozialwissenschaften'];
+  const initialSubject = initialItem?.subject && allowedSubjects.includes(initialItem.subject)
+    ? initialItem.subject
+    : 'Mathematik';
   const [numericId, setNumericId] = useState<string>(
     initialItem?.id || generateNumericLernhilfeId()
   );
   const [title, setTitle] = useState(initialItem?.title || '');
   const [titleError, setTitleError] = useState<string | null>(null);
-  const [subject, setSubject] = useState(initialItem?.subject || 'Mathematik');
+  const [subject, setSubject] = useState(initialSubject);
   const [gradeLevel, setGradeLevel] = useState(
     isPresetGrade ? initialGrade : initialItem?.grade_level ? 'custom' : 'Klasse 8'
   );
@@ -121,6 +126,133 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [disclosureMode, setDisclosureMode] = useState<DisclosureMode>(
     initialItem?.disclosure_mode || 'stepped'
   );
+
+  // Glossary / Fachbegriffe state
+  const [glossary, setGlossary] = useState<Record<string, string>>(initialItem?.glossary || {});
+  const [isGeneratingGlossary, setIsGeneratingGlossary] = useState<boolean>(false);
+  const [generatingTerm, setGeneratingTerm] = useState<string | null>(null);
+  const [glossaryError, setGlossaryError] = useState<string | null>(null);
+  const [glossarySuccess, setGlossarySuccess] = useState<string | null>(null);
+  const [isGlossarySectionOpen, setIsGlossarySectionOpen] = useState<boolean>(true);
+  const [newCustomTerm, setNewCustomTerm] = useState<string>('');
+
+  const [previewGlossaryModal, setPreviewGlossaryModal] = useState<{ term: string; definition: string } | null>(null);
+
+  // Refs for inserting [[...]] tags into textareas
+  const taskTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const hintTextareaRefs = useRef<{ [index: number]: HTMLTextAreaElement | null }>({});
+
+  // Detect [[Term]] in taskContext and hints
+  const detectedTerms = React.useMemo(() => {
+    const terms = new Set<string>();
+    const regex = /\[\[(.*?)\]\]/g;
+    let match;
+    if (taskContext) {
+      while ((match = regex.exec(taskContext)) !== null) {
+        const t = match[1].trim();
+        if (t) terms.add(t);
+      }
+    }
+    hints.forEach((h) => {
+      if (h.text) {
+        while ((match = regex.exec(h.text)) !== null) {
+          const t = match[1].trim();
+          if (t) terms.add(t);
+        }
+      }
+    });
+    // Include all keys already defined in glossary
+    Object.keys(glossary).forEach((k) => {
+      if (k.trim()) terms.add(k.trim());
+    });
+    return Array.from(terms);
+  }, [taskContext, hints, glossary]);
+
+  // AI Definitions Generator
+  const handleGenerateGlossaryAi = async (termSpecific?: string) => {
+    const targetTerms = termSpecific ? [termSpecific] : detectedTerms;
+    if (targetTerms.length === 0) {
+      setGlossaryError('Keine Fachbegriffe in [[Klammern]] im Text oder in den Tipps gefunden.');
+      return;
+    }
+
+    if (termSpecific) {
+      setGeneratingTerm(termSpecific);
+    } else {
+      setIsGeneratingGlossary(true);
+    }
+    setGlossaryError(null);
+    setGlossarySuccess(null);
+
+    try {
+      const res = await fetch('/api/gemini/generate-definitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          terms: targetTerms,
+          subject,
+          gradeLevel: gradeLevel === 'custom' ? customGradeLevel : gradeLevel,
+          context: taskContext,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Fehler beim Generieren der Definitionen');
+      }
+
+      const data = await res.json();
+      if (data.definitions && typeof data.definitions === 'object') {
+        setGlossary((prev) => ({
+          ...prev,
+          ...data.definitions,
+        }));
+        setGlossarySuccess(
+          termSpecific
+            ? `Definition für „${termSpecific}“ erfolgreich mit KI erstellt!`
+            : `Definitionen für ${targetTerms.length} Begriff(e) erfolgreich mit KI erstellt!`
+        );
+        setTimeout(() => setGlossarySuccess(null), 4000);
+      }
+    } catch (err: any) {
+      console.error('Glossary error:', err);
+      setGlossaryError(err.message || 'Fehler bei der KI-Definitions-Generierung');
+    } finally {
+      setIsGeneratingGlossary(false);
+      setGeneratingTerm(null);
+    }
+  };
+
+  const handleInsertTermBrackets = (
+    textarea: HTMLTextAreaElement | null,
+    currentText: string,
+    onUpdate: (newText: string) => void
+  ) => {
+    if (!textarea) {
+      onUpdate(currentText ? currentText + ' [[Fachbegriff]]' : '[[Fachbegriff]]');
+      return;
+    }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start !== undefined && end !== undefined && start !== end) {
+      const selected = currentText.substring(start, end);
+      const replaced = currentText.substring(0, start) + `[[${selected}]]` + currentText.substring(end);
+      onUpdate(replaced);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start, start + selected.length + 4);
+      }, 0);
+    } else {
+      const pos = start !== undefined ? start : currentText.length;
+      const placeholder = '[[Fachbegriff]]';
+      const inserted = currentText.substring(0, pos) + placeholder + currentText.substring(pos);
+      onUpdate(inserted);
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(pos + 2, pos + 13);
+      }, 0);
+    }
+  };
 
   // Active math helper index (-1 if none open)
   const [activeMathHelperHintIndex, setActiveMathHelperHintIndex] = useState<number | null>(null);
@@ -538,6 +670,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       task_image: taskImage,
       disclosure_mode: disclosureMode,
       hints,
+      glossary: Object.keys(glossary).length > 0 ? glossary : undefined,
       qr_design: hasCustomQrDesign ? qrDesign : undefined,
       created_at: initialItem?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -628,7 +761,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 )}
               </div>
               <h3 className="text-2xl font-bold">{title || 'Ohne Titel'}</h3>
-              {taskContext && <LaTeXRenderer content={taskContext} />}
+              {taskContext && (
+                <LaTeXRenderer
+                  content={taskContext}
+                  glossary={glossary}
+                  onTermClick={(term, def) => setPreviewGlossaryModal({ term, definition: def })}
+                />
+              )}
               {taskImage && (
                 <img src={taskImage} alt="Aufgabe" className="rounded-lg max-h-60 object-contain mx-auto" />
               )}
@@ -670,7 +809,11 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                     )}
                   </div>
                   {h.text ? (
-                    <LaTeXRenderer content={h.text} />
+                    <LaTeXRenderer
+                      content={h.text}
+                      glossary={glossary}
+                      onTermClick={(term, def) => setPreviewGlossaryModal({ term, definition: def })}
+                    />
                   ) : (
                     <span className="text-slate-400 italic text-xs">Noch kein Text eingetragen.</span>
                   )}
@@ -757,15 +900,8 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                 >
                   <option value="Mathematik">Mathematik</option>
-                  <option value="Physik">Physik</option>
-                  <option value="Chemie">Chemie</option>
-                  <option value="Biologie">Biologie</option>
-                  <option value="Informatik">Informatik</option>
-                  <option value="Sozialwissenschaften">Sozialwissenschaften</option>
                   <option value="Wirtschaft-Politik">Wirtschaft-Politik</option>
-                  <option value="Deutsch">Deutsch</option>
-                  <option value="Englisch">Englisch</option>
-                  <option value="Sonstiges">Sonstiges</option>
+                  <option value="Sozialwissenschaften">Sozialwissenschaften</option>
                 </select>
               </div>
 
@@ -899,6 +1035,17 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 )}
                 <button
                   type="button"
+                  onClick={() =>
+                    handleInsertTermBrackets(taskTextareaRef.current, taskContext, setTaskContext)
+                  }
+                  className="text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 dark:bg-indigo-950/60 transition-all shadow-2xs"
+                  title="Markierten Text oder neuen Fachbegriff in [[...]] setzen für interaktives Schüler-Glossar"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>[[Fachbegriff]]</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsTaskMathHelperOpen(!isTaskMathHelperOpen)}
                   className={`text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border transition-all ${
                     isTaskMathHelperOpen
@@ -937,12 +1084,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 target.style.height = `${Math.max(88, target.scrollHeight)}px`;
               }}
               ref={(el) => {
+                taskTextareaRef.current = el;
                 if (el) {
                   el.style.height = 'auto';
                   el.style.height = `${Math.max(88, el.scrollHeight)}px`;
                 }
               }}
-              placeholder="Hier den Aufgabentext eintragen (oder Foto aufnehmen / Screenshot per Strg+V einfügen, um Text & Formeln automatisch zu extrahieren)..."
+              placeholder="Hier den Aufgabentext eintragen (oder Foto aufnehmen / Screenshot per Strg+V einfügen, um Text & Formeln automatisch zu extrahieren)... Nutze [[Fachbegriff]] für interaktive Mini-Definitionen!"
               className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed overflow-hidden transition-[height] duration-75"
               style={{ minHeight: '88px', overflowY: 'hidden' }}
             />
@@ -1288,35 +1436,52 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
 
                   {/* Hint Text Area */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
                       <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                        Erklärung / Leitfrage (mit Mathe-Formeln in $formel$):
+                        Erklärung / Leitfrage (mit Mathe in $formel$ oder [[Fachbegriff]]):
                       </label>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActiveMathHelperHintIndex(
-                            activeMathHelperHintIndex === index ? null : index
-                          )
-                        }
-                        className={`text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border transition-all ${
-                          activeMathHelperHintIndex === index
-                            ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
-                            : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
-                        }`}
-                        title={
-                          activeMathHelperHintIndex === index
-                            ? 'Formel-Assistent schließen'
-                            : 'Formel-Assistent öffnen'
-                        }
-                      >
-                        <Calculator className="w-3.5 h-3.5" />
-                        <span>
-                          {activeMathHelperHintIndex === index
-                            ? 'Formel-Assistent schließen'
-                            : 'Formel-Assistent'}
-                        </span>
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleInsertTermBrackets(
+                              hintTextareaRefs.current[index] || null,
+                              hint.text,
+                              (newText) => handleUpdateHint(index, { text: newText })
+                            )
+                          }
+                          className="text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 bg-indigo-50/70 hover:bg-indigo-100 dark:bg-indigo-950/60 transition-all shadow-2xs"
+                          title="Markierten Begriff oder neuen Fachbegriff in [[...]] setzen"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>[[Fachbegriff]]</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveMathHelperHintIndex(
+                              activeMathHelperHintIndex === index ? null : index
+                            )
+                          }
+                          className={`text-xs flex items-center gap-1.5 font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                            activeMathHelperHintIndex === index
+                              ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                              : 'text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50'
+                          }`}
+                          title={
+                            activeMathHelperHintIndex === index
+                              ? 'Formel-Assistent schließen'
+                              : 'Formel-Assistent öffnen'
+                          }
+                        >
+                          <Calculator className="w-3.5 h-3.5" />
+                          <span>
+                            {activeMathHelperHintIndex === index
+                              ? 'Formel schließen'
+                              : 'Formel einfügen'}
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     <textarea
@@ -1333,12 +1498,13 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                         target.style.height = `${Math.max(88, target.scrollHeight)}px`;
                       }}
                       ref={(el) => {
+                        hintTextareaRefs.current[index] = el;
                         if (el) {
                           el.style.height = 'auto';
                           el.style.height = `${Math.max(88, el.scrollHeight)}px`;
                         }
                       }}
-                      placeholder="Erklärung, Denkanstoß oder Leitfrage eingeben..."
+                      placeholder="Erklärung, Denkanstoß oder Leitfrage eingeben... Nutze [[Fachbegriff]] für ein klickbares Schüler-Glossar!"
                       className="w-full px-3.5 py-2.5 text-base sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs leading-relaxed overflow-hidden transition-[height] duration-75"
                       style={{ minHeight: '88px', overflowY: 'hidden' }}
                     />
@@ -1829,6 +1995,238 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
             </button>
           </div>
 
+          {/* Fachbegriffe & Mini-Glossar (KI-unterstützte Definitionen) */}
+          <div className="bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                      <span>Fachbegriffe &amp; Mini-Glossar</span>
+                      <span className="text-yellow-500">✨</span>
+                    </h3>
+                    {detectedTerms.length > 0 ? (
+                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full">
+                        {detectedTerms.length} {detectedTerms.length === 1 ? 'Begriff' : 'Begriffe'} erkannt
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
+                        Keine [[Begriffe]] markiert
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                    Wörter in doppelten eckigen Klammern wie <code className="bg-indigo-50 dark:bg-indigo-950 px-1 py-0.5 rounded text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">[[Fachbegriff]]</code> werden für Schüler gepunktet unterstrichen. Beim Antippen erscheint eine schülergerechte Mini-Definition – <em>ohne</em> dass ein Tipp verbraucht wird!
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle expand/collapse button */}
+              <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsGlossarySectionOpen(!isGlossarySectionOpen)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-center gap-1.5 transition-colors"
+                >
+                  <span>{isGlossarySectionOpen ? 'Einklappen' : 'Verwalten'}</span>
+                  {isGlossarySectionOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {isGlossarySectionOpen && (
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                {/* Actions Bar */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isGeneratingGlossary || detectedTerms.length === 0}
+                      onClick={() => handleGenerateGlossaryAi()}
+                      className="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 rounded-xl shadow-xs flex items-center gap-2 transition-colors"
+                      title="Erstellt mit KI schülergerechte 1-3 Sätze Definitionen für alle erkannten Fachbegriffe"
+                    >
+                      {isGeneratingGlossary ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>KI formuliert Definitionen...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                          <span>Alle Begriffe mit KI definieren</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Manual add term */}
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={newCustomTerm}
+                      onChange={(e) => setNewCustomTerm(e.target.value)}
+                      placeholder="Begriff manuell ergänzen..."
+                      className="px-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44 sm:w-52"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const trimmed = newCustomTerm.trim();
+                          if (trimmed) {
+                            setGlossary((prev) => ({ ...prev, [trimmed]: prev[trimmed] || '' }));
+                            setNewCustomTerm('');
+                          }
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = newCustomTerm.trim();
+                        if (trimmed) {
+                          setGlossary((prev) => ({ ...prev, [trimmed]: prev[trimmed] || '' }));
+                          setNewCustomTerm('');
+                        }
+                      }}
+                      className="px-2.5 py-1.5 text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                    >
+                      + Hinzufügen
+                    </button>
+                  </div>
+                </div>
+
+                {/* Notifications */}
+                {glossarySuccess && (
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{glossarySuccess}</span>
+                  </div>
+                )}
+                {glossaryError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>{glossaryError}</span>
+                  </div>
+                )}
+
+                {/* Terms List or Empty State */}
+                {detectedTerms.length === 0 ? (
+                  <div className="p-6 text-center bg-slate-50/70 dark:bg-slate-950/40 rounded-xl border border-dashed border-slate-300 dark:border-slate-800 space-y-2">
+                    <div className="text-2xl">✨</div>
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Noch keine Fachbegriffe in [[Klammern]] im Text oder in den Tipps markiert.
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Klicke oben auf den Button <span className="font-semibold text-indigo-600 dark:text-indigo-400">[[Fachbegriff]]</span> oder schreibe z. B.{' '}
+                      <code className="text-indigo-600 dark:text-indigo-400 font-mono">[[Hypotenuse]]</code>,{' '}
+                      <code className="text-indigo-600 dark:text-indigo-400 font-mono">[[Scheitelpunkt]]</code> oder{' '}
+                      <code className="text-indigo-600 dark:text-indigo-400 font-mono">[[Subsidiaritätsprinzip]]</code> direkt in deine Erklärung.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {detectedTerms.map((term) => {
+                      const definition = glossary[term] || '';
+                      const isGeneratingThis = generatingTerm === term;
+                      return (
+                        <div
+                          key={term}
+                          className="p-3.5 bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-lg bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                [[{term}]]
+                              </span>
+                              {definition.trim() ? (
+                                <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Definition hinterlegt</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/70 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded-full">
+                                  Noch keine Definition
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={isGeneratingThis || isGeneratingGlossary}
+                                onClick={() => handleGenerateGlossaryAi(term)}
+                                className="px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                                title="Definition für diesen Begriff mit KI generieren"
+                              >
+                                {isGeneratingThis ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 animate-spin text-indigo-600" />
+                                    <span>Generiere...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                                    <span>{definition ? 'Mit KI neu generieren' : 'Mit KI definieren'}</span>
+                                  </>
+                                )}
+                              </button>
+                              {definition && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setGlossary((prev) => {
+                                      const next = { ...prev };
+                                      delete next[term];
+                                      return next;
+                                    });
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/60 transition-colors"
+                                  title="Definition leeren"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Editable Textarea for Definition */}
+                          <textarea
+                            rows={2}
+                            value={definition}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setGlossary((prev) => ({
+                                ...prev,
+                                [term]: val,
+                              }));
+                            }}
+                            placeholder={`Schreibe hier die didaktische Mini-Definition für „${term}“ (1-3 verständliche Sätze) oder klicke auf 'Mit KI definieren'...`}
+                            className="w-full px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 leading-relaxed"
+                          />
+
+                          {/* Live preview of definition KaTeX */}
+                          {definition && (definition.includes('$') || definition.includes('\\')) && (
+                            <div className="p-2 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-lg text-xs text-slate-700 dark:text-slate-300 border border-indigo-100 dark:border-indigo-900/50">
+                              <span className="text-[10px] font-bold text-indigo-500 block mb-0.5">Formel-Vorschau:</span>
+                              <LaTeXRenderer content={definition} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Custom QR-Code Design Card for this specific Lernhilfe */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2028,6 +2426,71 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Ja, alle Tipps überschreiben</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mini-Lexikon Vorschau Modal */}
+      {previewGlossaryModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewGlossaryModal(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-indigo-200 dark:border-indigo-900/60 overflow-hidden flex flex-col animate-in zoom-in-95 sm:slide-in-from-bottom-2 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-white/15 backdrop-blur-sm text-yellow-300">
+                  <Sparkles className="w-5 h-5" />
+                </span>
+                <div>
+                  <div className="text-xs uppercase font-bold tracking-wider text-indigo-200">
+                    Mini-Definition • Vorschau
+                  </div>
+                  <h3 className="text-lg font-bold leading-tight">
+                    {previewGlossaryModal.term}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewGlossaryModal(null)}
+                className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                title="Schließen"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-4 text-slate-800 dark:text-slate-200 text-sm leading-relaxed">
+                {previewGlossaryModal.definition ? (
+                  <LaTeXRenderer content={previewGlossaryModal.definition} />
+                ) : (
+                  <p className="text-slate-500 italic">
+                    Für diesen Begriff wurde noch keine Definition hinterlegt.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Verbraucht keinen Schüler-Tipp!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewGlossaryModal(null)}
+                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-colors"
+                >
+                  Schließen
+                </button>
+              </div>
             </div>
           </div>
         </div>
