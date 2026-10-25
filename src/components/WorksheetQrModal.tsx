@@ -49,6 +49,7 @@ import {
   ArrowUp,
   ArrowDown,
   Lock,
+  Loader2,
 } from 'lucide-react';
 
 interface WorksheetQrModalProps {
@@ -110,6 +111,11 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedImgId, setCopiedImgId] = useState<string | null>(null);
   const individualCanvasRefs = useRef<Record<string, HTMLCanvasElement | null>>({});
+
+  // High-contrast, ink-saving QR data URLs generated for clean printing & PDF export
+  const [masterQrDataUrl, setMasterQrDataUrl] = useState<string>('');
+  const [individualQrDataUrls, setIndividualQrDataUrls] = useState<Record<string, string>>({});
+  const [isPreparingPrint, setIsPreparingPrint] = useState<boolean>(false);
 
   const [individualShortUrls, setIndividualShortUrls] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -286,8 +292,53 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  // Generate high-resolution, ink-saving QR images for the clean print handout
+  const generateAllQrDataUrls = async () => {
+    try {
+      // 1. Master QR (Crisp black on white for ink-saving print)
+      const masterCanvas = document.createElement('canvas');
+      await renderStyledQrCode(masterCanvas, masterLongUrl, {
+        size: 320,
+        customSettings: {
+          ...masterDesign,
+          darkColor: '#000000',
+          lightColor: '#ffffff',
+        },
+      });
+      setMasterQrDataUrl(masterCanvas.toDataURL('image/png'));
+
+      // 2. Individual task QRs
+      const results: Record<string, string> = {};
+      for (const item of orderedItems) {
+        const itemCanvas = document.createElement('canvas');
+        const studentUrl = buildStudentUrl(item.id);
+        await renderStyledQrCode(itemCanvas, studentUrl, {
+          size: 240,
+          customSettings: {
+            ...getEffectiveQrDesign(item),
+            darkColor: '#000000',
+            lightColor: '#ffffff',
+          },
+        });
+        results[item.id] = itemCanvas.toDataURL('image/png');
+      }
+      setIndividualQrDataUrls(results);
+    } catch (err) {
+      console.warn('Failed to pre-render printable QR codes:', err);
+    }
+  };
+
+  useEffect(() => {
+    generateAllQrDataUrls();
+  }, [orderedItems, masterLongUrl, masterDesign]);
+
+  const handlePrint = async () => {
+    setIsPreparingPrint(true);
+    await generateAllQrDataUrls();
+    setIsPreparingPrint(false);
+    setTimeout(() => {
+      window.print();
+    }, 120);
   };
 
   // Find dominant subject & grade level
@@ -323,10 +374,20 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              disabled={isPreparingPrint}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-60"
             >
-              <Printer className="w-4 h-4" />
-              <span>Drucken / PDF</span>
+              {isPreparingPrint ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Druck vorbereiten...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="w-4 h-4" />
+                  <span>Drucken / PDF</span>
+                </>
+              )}
             </button>
 
             <button
@@ -407,8 +468,8 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
           </div>
         )}
 
-        {/* Modal Scrollable Content */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body flex-1">
+        {/* Modal Scrollable Content - Screen Only (Hidden during print) */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 printable-modal-body flex-1 no-print">
           {activeTab === 'master' ? (
             /* ======================================================== */
             /* TAB 1: MASTER QR-CODE FOR THE ENTIRE WORKSHEET           */
@@ -849,6 +910,136 @@ export const WorksheetQrModal: React.FC<WorksheetQrModalProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* ========================================================================= */}
+        {/* DEDICATED INK-SAVING STUDENT HANDOUT SHEET (PRINT & PDF EXPORT ONLY)      */}
+        {/* ========================================================================= */}
+        <div className="print-only hidden print:block w-full p-2 text-black bg-white">
+          {/* Header */}
+          <div className="border-b-2 border-slate-900 pb-3 mb-3">
+            <div className="flex items-center justify-between text-[11px] font-bold tracking-wider uppercase mb-1 text-slate-800">
+              <span>Digitale Lernhilfen · Arbeitsblatt-Begleitbogen</span>
+              <span>
+                {subject} {gradeLevel ? `· Klasse: ${gradeLevel}` : ''}
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <h1 className="text-xl font-extrabold text-black tracking-tight">
+                {groupName}
+              </h1>
+              <div className="text-[11px] text-slate-700 font-medium whitespace-nowrap">
+                Name: __________________________ Datum: _________
+              </div>
+            </div>
+            <p className="text-[10.5px] text-slate-800 mt-1 leading-snug">
+              <strong>Hinweis für Schüler:innen:</strong> Scanne den QR-Code mit der Smartphone-Kamera ab, um gestufte Hilfestellungen zu erhalten. Versuche die Aufgaben zuerst selbstständig – nutze die Tipps Schritt für Schritt nur bei Bedarf!
+            </p>
+          </div>
+
+          {/* Master QR Section Card */}
+          <div className="border-2 border-slate-900 rounded-xl p-3 mb-4 flex items-center gap-4 break-inside-avoid bg-white">
+            {masterQrDataUrl ? (
+              <img
+                src={masterQrDataUrl}
+                alt="Master-QR-Code"
+                className="w-24 h-24 object-contain shrink-0 border border-slate-300 rounded p-1 bg-white"
+              />
+            ) : (
+              <div className="w-24 h-24 border border-slate-300 rounded flex items-center justify-center text-xs text-slate-500 shrink-0">
+                QR-Code
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="inline-block px-1.5 py-0.5 border border-slate-800 rounded text-[9.5px] font-extrabold uppercase tracking-wide mb-1">
+                Master-QR-Code · Alle {orderedItems.length} Aufgaben
+              </div>
+              <h2 className="text-sm font-bold text-black leading-snug">
+                Gesamtes Arbeitsblatt aufrufen
+              </h2>
+              <p className="text-[10.5px] text-slate-700 mt-0.5 leading-tight">
+                Dieser zentrale Code führt dich zur digitalen Übersicht aller {orderedItems.length} Teilaufgaben. Dort kannst du auf dem Smartphone direkt die Aufgabe auswählen, zu der du Hilfe benötigst.
+              </p>
+              <div className="mt-1.5 text-[10px] text-slate-900 font-mono font-semibold flex items-center gap-1">
+                <span>Direktlink:</span>
+                <span className="underline">{formatDisplayShortUrl(masterShortUrl || masterLongUrl)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Subtitle for individual tasks */}
+          <div className="flex items-center justify-between pb-1 mb-2 border-b border-slate-400">
+            <h3 className="text-[11px] font-extrabold text-black uppercase tracking-wider">
+              Direkte QR-Codes für jede Teilaufgabe ({orderedItems.length} Aufgaben)
+            </h3>
+            <span className="text-[10px] text-slate-600">
+              Geordnet nach Arbeitsblatt-Reihenfolge
+            </span>
+          </div>
+
+          {/* Grid of Task QR Codes */}
+          <div className="grid grid-cols-2 gap-2.5">
+            {orderedItems.map((item, idx) => {
+              const qrUrl = individualQrDataUrls[item.id];
+              const directUrl = individualShortUrls[item.id] || buildStudentUrl(item.id);
+              const hintCount = item.hints.length;
+              const hasPin = item.hints.some((h) => !!h.pin && h.pin.trim().length > 0);
+
+              return (
+                <div
+                  key={item.id}
+                  className="print-card border border-slate-800 rounded-lg p-2 flex items-start gap-2.5 break-inside-avoid bg-white"
+                >
+                  {qrUrl ? (
+                    <img
+                      src={qrUrl}
+                      alt={`QR-Code ${item.title}`}
+                      className="w-20 h-20 object-contain shrink-0 border border-slate-300 rounded p-0.5 bg-white"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 border border-slate-300 rounded flex items-center justify-center text-[10px] text-slate-400 shrink-0">
+                      QR
+                    </div>
+                  )}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-extrabold text-black">
+                        {idx + 1}.
+                      </span>
+                      <h4 className="text-xs font-bold text-black truncate leading-tight">
+                        {item.title}
+                      </h4>
+                    </div>
+
+                    {item.task_context && (
+                      <p className="text-[9.5px] text-slate-700 line-clamp-2 mt-0.5 leading-snug">
+                        {item.task_context}
+                      </p>
+                    )}
+
+                    <div className="mt-1 flex items-center gap-1.5 text-[9px] text-slate-700 font-medium">
+                      <span>{hintCount} {hintCount === 1 ? 'gestufter Tipp' : 'gestufte Tipps'}</span>
+                      {hasPin && (
+                        <span className="font-bold border border-slate-700 px-1 rounded text-[8px]">
+                          PIN-Code
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-1 text-[8.5px] text-slate-800 font-mono truncate">
+                      {formatDisplayShortUrl(directUrl)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer in printout */}
+          <div className="mt-3 pt-2 border-t border-slate-300 text-center text-[8.5px] text-slate-600">
+            Digitale Lernhilfen · Gestufte Hilfestellungen &amp; differenzierte Tippkarten für den Unterricht
+          </div>
         </div>
       </div>
     </div>

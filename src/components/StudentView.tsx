@@ -117,6 +117,9 @@ export const StudentView: React.FC<StudentViewProps> = ({
     text: string;
   } | null>(null);
 
+  // Track if second hint was ever unlocked/opened (to permanently disable glow on hint 1)
+  const [hasSecondHintBeenOpened, setHasSecondHintBeenOpened] = useState<boolean>(false);
+
   // Active glossary term popover ({ term, definition })
   const [activeGlossaryTerm, setActiveGlossaryTerm] = useState<{
     term: string;
@@ -131,6 +134,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
     setUnlockedPins({});
     setPinInputs({});
     setPinErrors({});
+    setHasSecondHintBeenOpened(false);
 
     // Load existing votes for each hint of this item
     const initialVotes: Record<string, 'up' | 'down'> = {};
@@ -160,8 +164,14 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const toggleHintOpen = (hintId: string) => {
     setOpenHints((prev) => {
       const willBeOpen = !prev[hintId];
-      if (willBeOpen && !isTeacherPreview) {
-        recordHintView(item.id, hintId);
+      if (willBeOpen) {
+        if (!isTeacherPreview) {
+          recordHintView(item.id, hintId);
+        }
+        // If second hint or higher is opened, permanently disable glow for hint 1
+        if (item.hints[1] && hintId === item.hints[1].id) {
+          setHasSecondHintBeenOpened(true);
+        }
       }
       return {
         ...prev,
@@ -173,6 +183,12 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const handleRevealNext = (indexToReveal: number) => {
     const nextCount = indexToReveal + 1;
     setUnlockedCount(nextCount);
+
+    // If revealing hint 2 or higher, permanently disable glow on hint 1
+    if (indexToReveal >= 1) {
+      setHasSecondHintBeenOpened(true);
+    }
+
     const nextHintId = item.hints[indexToReveal]?.id;
     if (nextHintId) {
       setOpenHints((prev) => ({
@@ -222,18 +238,16 @@ export const StudentView: React.FC<StudentViewProps> = ({
         return next;
       });
 
-      if (!isTeacherPreview) {
-        await voteHint(item.id, hintId, type);
-      }
+      // Vote is always recorded and counted in stats, including during teacher preview
+      await voteHint(item.id, hintId, type);
       return;
     }
 
     // Set or switch vote
     setUserVotes((prev) => ({ ...prev, [hintId]: type }));
 
-    if (!isTeacherPreview) {
-      await voteHint(item.id, hintId, type);
-    }
+    // Vote is always recorded and counted in stats, including during teacher preview
+    await voteHint(item.id, hintId, type);
   };
 
   const handleSuggestionSubmit = async (e: React.FormEvent) => {
@@ -458,37 +472,72 @@ export const StudentView: React.FC<StudentViewProps> = ({
         const isPinUnlocked = !hasPin || !!unlockedPins[hint.id];
         const isError = !!pinErrors[hint.id];
 
+        // Pulsating glow for Hint 1 in stepped mode:
+        // Visible when collapsed, disappears when opened, returns if collapsed,
+        // but permanently suppressed once Hint 2 has been opened or unlocked.
+        const isFirstSteppedHintGlow =
+          !isAllVisible &&
+          index === 0 &&
+          !isOpen &&
+          unlockedCount <= 1 &&
+          !hasSecondHintBeenOpened;
+
         return (
           <div
             key={hint.id || index}
             id={`hint-card-${index}`}
-            className={`transition-all duration-200 bg-white dark:bg-slate-900 border rounded-2xl shadow-xs overflow-hidden ${
-              isOpen
-                ? 'border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-500/10'
-                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+            className={`transition-all duration-300 rounded-2xl overflow-hidden ${
+              isFirstSteppedHintGlow
+                ? 'animate-pulse-glow border-2 border-indigo-500 dark:border-indigo-400 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/70 dark:from-indigo-950/60 dark:via-slate-900 dark:to-purple-950/50 ring-2 ring-indigo-500/50 dark:ring-indigo-400/50'
+                : isOpen
+                ? 'border border-indigo-300 dark:border-indigo-700 ring-2 ring-indigo-500/10 bg-white dark:bg-slate-900 shadow-xs'
+                : 'border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 shadow-xs'
             }`}
           >
             {/* Hint Header / Toggle Button */}
             <button
               type="button"
               onClick={() => toggleHintOpen(hint.id)}
-              className="w-full p-4 sm:p-5 lg:p-6 flex items-center justify-between text-left gap-3 focus:outline-none transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+              className={`w-full p-4 sm:p-5 lg:p-6 flex items-center justify-between text-left gap-3 focus:outline-none transition-colors cursor-pointer ${
+                isFirstSteppedHintGlow
+                  ? 'hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30'
+                  : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+              }`}
             >
-              <div className="flex items-center gap-3 sm:gap-4">
-                <span className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold text-xs sm:text-sm flex items-center justify-center border border-indigo-200 dark:border-indigo-800 shadow-2xs">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <span
+                  className={`w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full font-bold text-xs sm:text-sm flex items-center justify-center transition-all ${
+                    isFirstSteppedHintGlow
+                      ? 'bg-indigo-600 text-white shadow-md ring-4 ring-indigo-200 dark:ring-indigo-900'
+                      : 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs'
+                  }`}
+                >
                   {index + 1}
                 </span>
-                <div>
-                  <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-slate-100 break-words leading-snug">
-                    {(() => {
-                      const raw = (hint.title || '').trim();
-                      if (!raw) return `Tipp ${index + 1}`;
-                      // Strip leading "Tipp X:" or "Tipp X." or "Tipp X"
-                      const cleaned = raw.replace(new RegExp(`^Tipp\\s*${index + 1}[:.]?\\s*`, 'i'), '').trim();
-                      if (!cleaned) return `Tipp ${index + 1}`;
-                      return `Tipp ${index + 1}: ${cleaned}`;
-                    })()}
-                  </h3>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-extrabold text-base sm:text-lg text-slate-900 dark:text-slate-100 break-words leading-snug">
+                      {(() => {
+                        const raw = (hint.title || '').trim();
+                        if (!raw) return `Tipp ${index + 1}`;
+                        // Strip leading "Tipp X:" or "Tipp X." or "Tipp X"
+                        const cleaned = raw.replace(new RegExp(`^Tipp\\s*${index + 1}[:.]?\\s*`, 'i'), '').trim();
+                        if (!cleaned) return `Tipp ${index + 1}`;
+                        return `Tipp ${index + 1}: ${cleaned}`;
+                      })()}
+                    </h3>
+
+                    {/* Interactive prompt badge when collapsed */}
+                    {isFirstSteppedHintGlow && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100/90 dark:bg-indigo-900/80 border border-indigo-300 dark:border-indigo-700/80 animate-pulse">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-500 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600 dark:bg-indigo-400"></span>
+                        </span>
+                        <span>Hier tippen zum Aufklappen</span>
+                      </span>
+                    )}
+                  </div>
                   {hasPin && !isPinUnlocked && (
                     <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5">
                       <Lock className="w-3 h-3" />
@@ -509,7 +558,16 @@ export const StudentView: React.FC<StudentViewProps> = ({
                   </span>
                 )}
 
-                {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                {isFirstSteppedHintGlow ? (
+                  <div className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-bold text-xs animate-bounce">
+                    <span className="hidden sm:inline">Öffnen</span>
+                    <ChevronDown className="w-5 h-5" />
+                  </div>
+                ) : isOpen ? (
+                  <ChevronUp className="w-5 h-5" />
+                ) : (
+                  <ChevronDown className="w-5 h-5" />
+                )}
               </div>
             </button>
 
