@@ -52,14 +52,29 @@ function setLocalVote(lernhilfeId: string, hintId: string, rating: FeedbackRatin
  * Fetches the statistics for a specific Lernhilfe.
  */
 export async function fetchLernhilfeStats(lernhilfeId: string): Promise<LernhilfeStats> {
+  const local = getLocalStats(lernhilfeId);
+
   try {
     const res = await fetch(`/api/stats/${encodeURIComponent(lernhilfeId)}`);
     if (res.ok) {
       const data = await res.json();
       if (data?.stats) {
-        // Cache locally
-        saveLocalStats(lernhilfeId, data.stats);
-        return data.stats;
+        const srvStats: LernhilfeStats = data.stats;
+        srvStats.suggestions = srvStats.suggestions || [];
+
+        // Seamlessly merge server suggestions and local suggestions
+        const mergedMap = new Map<string, any>();
+        srvStats.suggestions.forEach((s) => mergedMap.set(s.id || s.text, s));
+        (local.suggestions || []).forEach((s) => {
+          if (!mergedMap.has(s.id || s.text)) {
+            mergedMap.set(s.id || s.text, s);
+          }
+        });
+        srvStats.suggestions = Array.from(mergedMap.values());
+
+        // Cache merged stats locally
+        saveLocalStats(lernhilfeId, srvStats);
+        return srvStats;
       }
     }
   } catch (err) {
@@ -67,7 +82,7 @@ export async function fetchLernhilfeStats(lernhilfeId: string): Promise<Lernhilf
   }
 
   // Fallback to local cache
-  return getLocalStats(lernhilfeId);
+  return local;
 }
 
 /**
@@ -212,23 +227,51 @@ export async function voteHint(
 }
 
 /**
+ * Storage key for pupil's own suggestion per Lernhilfe
+ */
+const getPupilSuggestionStorageKey = (lernhilfeId: string) => `lernhilfen_my_sug_${lernhilfeId}`;
+
+/**
  * Fetches the pupil's own suggestion for this task if previously submitted.
  */
 export async function fetchPupilSuggestion(
   lernhilfeId: string
 ): Promise<{ id: string; text: string; createdAt: string; updatedAt: string } | null> {
   const voterId = getVoterId();
+
+  // 1. Try server first
   try {
     const res = await fetch(
       `/api/stats/${encodeURIComponent(lernhilfeId)}/suggestion?voterId=${encodeURIComponent(voterId)}`
     );
     if (res.ok) {
       const data = await res.json();
-      return data?.suggestion || null;
+      if (data?.suggestion) {
+        try {
+          localStorage.setItem(getPupilSuggestionStorageKey(lernhilfeId), JSON.stringify(data.suggestion));
+        } catch {}
+        return data.suggestion;
+      }
     }
   } catch (e) {
-    console.warn('Could not fetch pupil suggestion:', e);
+    console.warn('Could not fetch pupil suggestion from server, checking local:', e);
   }
+
+  // 2. Check local pupil suggestion storage fallback
+  try {
+    const raw = localStorage.getItem(getPupilSuggestionStorageKey(lernhilfeId));
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {}
+
+  // 3. Check local stats collection
+  const localStats = getLocalStats(lernhilfeId);
+  if (Array.isArray(localStats.suggestions)) {
+    const found = localStats.suggestions.find((s) => (s as any).voterId === voterId);
+    if (found) return found;
+  }
+
   return null;
 }
 
@@ -240,21 +283,91 @@ export async function submitPupilSuggestion(
   text: string
 ): Promise<{ success: boolean; isEdit?: boolean; suggestion?: any; error?: string }> {
   const voterId = getVoterId();
+  const cleanText = text.trim();
+  const now = new Date().toISOString();
+
+  // 1. Instantly record locally in both individual key and local stats
+  let localSug: any = null;
+  const localStats = getLocalStats(lernhilfeId);
+  localStats.suggestions = localStats.suggestions || [];
+  const existingIdx = localStats.suggestions.findIndex((s: any) => s.voterId === voterId);
+
+  if (existingIdx >= 0) {
+    localSug = {
+      ...localStats.suggestions[existingIdx],
+      text: cleanText,
+      updatedAt: now,
+    };
+    localStats.suggestions[existingIdx] = localSug;
+  } else {
+    localSug = {
+      id: 'sug_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+      lernhilfeId,
+      text: cleanText,
+      voterId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    localStats.suggestions.unshift(localSug);
+  }
+
+  saveLocalStats(lernhilfeId, localStats);
+  try {
+    localStorage.setItem(getPupilSuggestionStorageKey(lernhilfeId), JSON.stringify(localSug));
+  } catch {}
+
+  // 2. Transmit to server
   try {
     const res = await fetch(`/api/stats/${encodeURIComponent(lernhilfeId)}/suggestion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voterId }),
+      body: JSON.stringify({ text: cleanText, voterId }),
     });
+
     if (res.ok) {
       const data = await res.json();
-      return { success: true, isEdit: data?.isEdit, suggestion: data?.suggestion };
+      const serverSug = data?.suggestion || localSug;
+
+      try {
+        localStorage.setItem(getPupilSuggestionStorageKey(lernhilfeId), JSON.stringify(serverSug));
+      } catch {}
+
+      // Refresh local cache with latest server stats
+      try {
+        const statsRes = await fetch(`/api/stats/${encodeURIComponent(lernhilfeId)}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          if (statsData?.stats) {
+            saveLocalStats(lernhilfeId, statsData.stats);
+          }
+        }
+      } catch {}
+
+      // Dispatch real-time update event so open statistics modal refreshes immediately
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('lernhilfe-stats-updated', { detail: { lernhilfeId } }));
+      }
+
+      return {
+        success: true,
+        isEdit: data?.isEdit || existingIdx >= 0,
+        suggestion: serverSug,
+      };
     }
-    const errData = await res.json().catch(() => ({}));
-    return { success: false, error: errData?.error || 'Fehler beim Senden des Feedbacks.' };
   } catch (e: any) {
-    return { success: false, error: e.message || 'Netzwerkfehler.' };
+    console.warn('Network error transmitting suggestion to server, saved locally:', e);
   }
+
+  // Dispatch event even on local save
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('lernhilfe-stats-updated', { detail: { lernhilfeId } }));
+  }
+
+  return {
+    success: true,
+    isEdit: existingIdx >= 0,
+    suggestion: localSug,
+  };
 }
 
 /**

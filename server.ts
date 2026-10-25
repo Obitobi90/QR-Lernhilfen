@@ -544,12 +544,19 @@ const getClientIp = (req: express.Request): string => {
 // 1. Get statistics for a specific Lernhilfe
 app.get('/api/stats/:lernhilfeId', (req, res) => {
   const { lernhilfeId } = req.params;
-  const itemStats = statsDb[lernhilfeId] || {
-    lernhilfeId,
-    totalViews: 0,
-    hintStats: {},
-    updatedAt: new Date().toISOString(),
-  };
+  if (!statsDb[lernhilfeId]) {
+    statsDb[lernhilfeId] = {
+      lernhilfeId,
+      totalViews: 0,
+      hintStats: {},
+      suggestions: [],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  const itemStats = statsDb[lernhilfeId];
+  if (!Array.isArray(itemStats.suggestions)) {
+    itemStats.suggestions = [];
+  }
   return res.json({ stats: itemStats });
 });
 
@@ -714,17 +721,15 @@ app.post('/api/stats/:lernhilfeId/reset', (req, res) => {
 // 5. Get current pupil's suggestion for a Lernhilfe
 app.get('/api/stats/:lernhilfeId/suggestion', (req, res) => {
   const { lernhilfeId } = req.params;
-  const voterId = req.query.voterId as string;
-  const clientIp = getClientIp(req);
+  const voterId = (req.query.voterId as string || '').trim();
 
   const stat = statsDb[lernhilfeId];
   if (!stat || !Array.isArray(stat.suggestions)) {
     return res.json({ suggestion: null });
   }
 
-  const found = stat.suggestions.find(
-    (s) => (voterId && s.voterId === voterId) || s.ip === clientIp
-  );
+  // Strictly match by pupil's unique voterId to avoid collision on shared school WiFi / network IP
+  const found = voterId ? stat.suggestions.find((s) => s.voterId === voterId) : null;
 
   return res.json({ suggestion: found || null });
 });
@@ -739,6 +744,7 @@ app.post('/api/stats/:lernhilfeId/suggestion', (req, res) => {
   }
 
   const clientIp = getClientIp(req);
+  const cleanVoterId = (voterId || '').trim();
 
   if (!statsDb[lernhilfeId]) {
     statsDb[lernhilfeId] = {
@@ -755,44 +761,47 @@ app.post('/api/stats/:lernhilfeId/suggestion', (req, res) => {
     stat.suggestions = [];
   }
 
-  // Check if this pupil already submitted a suggestion (by voterId or IP)
-  const existingIdx = stat.suggestions.findIndex(
-    (s) => (voterId && s.voterId === voterId) || s.ip === clientIp
-  );
+  // Check if this specific pupil already submitted a suggestion using their unique voterId
+  const existingIdx = cleanVoterId
+    ? stat.suggestions.findIndex((s) => s.voterId === cleanVoterId)
+    : -1;
 
   const cleanText = text.trim().slice(0, 1000);
 
   if (existingIdx >= 0) {
-    // Edit existing suggestion
+    // Edit existing suggestion for this pupil
     stat.suggestions[existingIdx] = {
       ...stat.suggestions[existingIdx],
       text: cleanText,
-      voterId: voterId || stat.suggestions[existingIdx].voterId,
       updatedAt: new Date().toISOString(),
     };
+    stat.updatedAt = new Date().toISOString();
     saveStatsToDisk();
     return res.json({
       success: true,
       isEdit: true,
       suggestion: stat.suggestions[existingIdx],
+      totalSuggestions: stat.suggestions.length,
     });
   } else {
-    // Create new suggestion
+    // Create new suggestion for this pupil
     const newSug: PupilSuggestion = {
       id: 'sug-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
       lernhilfeId,
       text: cleanText,
       ip: clientIp,
-      voterId: voterId || '',
+      voterId: cleanVoterId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     stat.suggestions.unshift(newSug);
+    stat.updatedAt = new Date().toISOString();
     saveStatsToDisk();
     return res.json({
       success: true,
       isEdit: false,
       suggestion: newSug,
+      totalSuggestions: stat.suggestions.length,
     });
   }
 });

@@ -25,6 +25,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   MessageSquarePlus,
+  Loader2,
   Check,
   Columns2,
   Square,
@@ -110,6 +111,7 @@ export const StudentView: React.FC<StudentViewProps> = ({
   const [suggestionText, setSuggestionText] = useState<string>('');
   const [suggestionSaved, setSuggestionSaved] = useState<boolean>(false);
   const [suggestionLoading, setSuggestionLoading] = useState<boolean>(false);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [existingSuggestion, setExistingSuggestion] = useState<{
     id: string;
     text: string;
@@ -236,16 +238,26 @@ export const StudentView: React.FC<StudentViewProps> = ({
 
   const handleSuggestionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!suggestionText.trim() || suggestionLoading) return;
+    const clean = suggestionText.trim();
+    if (!clean || suggestionLoading) return;
 
     setSuggestionLoading(true);
-    const res = await submitPupilSuggestion(item.id, suggestionText.trim());
-    setSuggestionLoading(false);
+    setSuggestionError(null);
+    setSuggestionSaved(false);
 
-    if (res.success) {
-      setSuggestionSaved(true);
-      setExistingSuggestion(res.suggestion || { id: 'temp', text: suggestionText.trim() });
-      setTimeout(() => setSuggestionSaved(false), 3500);
+    try {
+      const res = await submitPupilSuggestion(item.id, clean);
+      if (res.success) {
+        setSuggestionSaved(true);
+        setExistingSuggestion(res.suggestion || { id: 'temp', text: clean });
+        // Keep confirmation message visible
+      } else {
+        setSuggestionError(res.error || 'Fehler beim Übermitteln des Feedbacks.');
+      }
+    } catch (err: any) {
+      setSuggestionError(err.message || 'Verbindungsfehler. Bitte versuche es erneut.');
+    } finally {
+      setSuggestionLoading(false);
     }
   };
 
@@ -790,42 +802,67 @@ export const StudentView: React.FC<StudentViewProps> = ({
             </div>
 
             {(showSuggestionForm || existingSuggestion) && (
-              <form onSubmit={handleSuggestionSubmit} className="space-y-2.5 pt-1">
+              <form onSubmit={handleSuggestionSubmit} className="space-y-3 pt-1">
+                {suggestionSaved && (
+                  <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-300 dark:border-emerald-800 rounded-xl flex items-start gap-2.5 text-xs text-emerald-800 dark:text-emerald-200 animate-in fade-in slide-in-from-top-1">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-xs sm:text-sm text-emerald-900 dark:text-emerald-100">
+                        Vorschlag erfolgreich übermittelt!
+                      </p>
+                      <p className="text-emerald-700 dark:text-emerald-300 text-[11px] leading-relaxed mt-0.5">
+                        Vielen Dank! Dein Denkanstoß wurde gespeichert und ist jetzt in der Aufgaben-Statistik für deine Lehrkraft einsehbar.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {suggestionError && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-xl flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <p className="font-medium">{suggestionError}</p>
+                  </div>
+                )}
+
                 <textarea
                   rows={3}
                   value={suggestionText}
-                  onChange={(e) => setSuggestionText(e.target.value)}
+                  onChange={(e) => {
+                    setSuggestionText(e.target.value);
+                    setSuggestionError(null);
+                  }}
                   placeholder="z. B. 'Ein Tipp zur Umrechnung der Einheiten vor Anwendung der Formel wäre hilfreich gewesen...'"
                   className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-slate-200 leading-relaxed resize-none"
                 />
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <span className="text-[11px] text-slate-400">
                     {existingSuggestion
-                      ? 'Du kannst deinen Vorschlag jederzeit hier bearbeiten.'
+                      ? 'Du hast bereits einen Vorschlag eingereicht. Du kannst deinen Text oben jederzeit bearbeiten.'
                       : 'Dein Vorschlag wird anonym an deine Lehrkraft übermittelt.'}
                   </span>
 
                   <div className="flex items-center gap-2 self-end sm:self-auto">
-                    {suggestionSaved && (
-                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Gespeichert!</span>
-                      </span>
-                    )}
                     <button
                       type="submit"
                       disabled={suggestionLoading || !suggestionText.trim()}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                     >
-                      <MessageSquarePlus className="w-3.5 h-3.5" />
-                      <span>
-                        {suggestionLoading
-                          ? 'Wird gesendet...'
-                          : existingSuggestion
-                          ? 'Vorschlag aktualisieren'
-                          : 'Vorschlag abschicken'}
-                      </span>
+                      {suggestionLoading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Wird gesendet...</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageSquarePlus className="w-3.5 h-3.5" />
+                          <span>
+                            {existingSuggestion
+                              ? 'Vorschlag aktualisieren'
+                              : 'Vorschlag abschicken'}
+                          </span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

@@ -41,6 +41,16 @@ export const StatsModal: React.FC<StatsModalProps> = ({ item, onClose }) => {
 
   useEffect(() => {
     loadStats();
+
+    const handleStatsUpdated = (e: any) => {
+      const updatedId = e?.detail?.lernhilfeId;
+      if (!updatedId || updatedId === item.id) {
+        loadStats();
+      }
+    };
+
+    window.addEventListener('lernhilfe-stats-updated', handleStatsUpdated);
+    return () => window.removeEventListener('lernhilfe-stats-updated', handleStatsUpdated);
   }, [item.id]);
 
   const executeReset = async () => {
