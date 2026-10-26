@@ -61,6 +61,7 @@ export interface Lernhilfe {
   task_context: string;
   task_image?: string;
   disclosure_mode?: DisclosureMode; // Gestufte Freischaltung ('stepped') oder alle Tipps direkt sichtbar ('all_visible')
+  is_locked?: boolean; // Ob die Lernhilfe aktuell gesperrt ist (Schüler sehen Wartebildschirm). Standard: false / freigeschaltet
   qr_design?: QrDesignSettings; // Individuelles QR-Code Design für diese spezifische Lernhilfe
   glossary?: Record<string, string>; // Mini-Definitionen für [[Fachbegriffe]], z.B. { "Scheitelpunkt": "..." }
   hints: Hint[];

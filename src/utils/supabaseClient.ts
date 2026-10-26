@@ -317,6 +317,7 @@ ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS disclosure_mode TEXT DEFA
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS group_name TEXT;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS task_image TEXT;
 ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS qr_design JSONB;
+ALTER TABLE public.lernhilfen ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE;
 
 -- 3. Row Level Security freigeben (Lese- und Schreibzugriff für alle Geräte):
 ALTER TABLE public.lernhilfen ENABLE ROW LEVEL SECURITY;
@@ -361,6 +362,7 @@ export async function checkSupabaseSchemaHealth(): Promise<SchemaHealthResult> {
     'group_name',
     'disclosure_mode',
     'qr_design',
+    'is_locked',
     'updated_at',
   ];
 
@@ -530,6 +532,7 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
               task_context: row.task_context || '',
               task_image: row.task_image || undefined,
               disclosure_mode: row.disclosure_mode || 'stepped',
+              is_locked: row.is_locked === true,
               hints: Array.isArray(row.hints) ? row.hints : [],
               qr_design: row.qr_design || undefined,
               glossary: row.glossary || undefined,
@@ -623,6 +626,7 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
           task_context: data.task_context || '',
           task_image: data.task_image || undefined,
           disclosure_mode: data.disclosure_mode || 'stepped',
+          is_locked: data.is_locked === true,
           hints: Array.isArray(data.hints) ? data.hints : [],
           qr_design: data.qr_design || undefined,
           glossary: data.glossary || localItems.find((x) => String(x.id).trim() === id)?.glossary || undefined,
@@ -696,6 +700,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
         task_context: updatedItem.task_context || '',
         task_image: updatedItem.task_image || null,
         disclosure_mode: updatedItem.disclosure_mode || 'stepped',
+        is_locked: updatedItem.is_locked === true,
         hints: updatedItem.hints || [],
         qr_design: updatedItem.qr_design || null,
         glossary: updatedItem.glossary || null,
@@ -737,7 +742,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
 
         // If specific column name wasn't parsed but code is PGRST204 or message mentions column:
         if (error.code === 'PGRST204' || (error.message && error.message.toLowerCase().includes('column'))) {
-          const fallbackCandidates = ['disclosure_mode', 'qr_design', 'task_image', 'group_name', 'grade_level'];
+          const fallbackCandidates = ['is_locked', 'disclosure_mode', 'qr_design', 'task_image', 'group_name', 'grade_level'];
           let dropped = false;
           for (const cand of fallbackCandidates) {
             if (cand in activePayload && !strippedColumns.includes(cand)) {
@@ -878,3 +883,15 @@ export async function uploadMediaToSupabase(
     return null;
   }
 }
+
+export async function toggleLernhilfeLock(id: string, isLocked: boolean): Promise<Lernhilfe | null> {
+  const item = await fetchLernhilfeById(id);
+  if (!item) return null;
+  const updated: Lernhilfe = {
+    ...item,
+    is_locked: isLocked,
+    updated_at: new Date().toISOString(),
+  };
+  return await saveLernhilfe(updated);
+}
+

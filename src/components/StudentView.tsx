@@ -34,6 +34,7 @@ import {
   RotateCcw,
   Sparkle,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -44,6 +45,7 @@ import {
   fetchPupilSuggestion,
   submitPupilSuggestion,
 } from '../utils/statsService';
+import { fetchLernhilfeById, saveLernhilfe } from '../utils/supabaseClient';
 
 interface StudentViewProps {
   item: Lernhilfe;
@@ -56,7 +58,7 @@ interface StudentViewProps {
 }
 
 export const StudentView: React.FC<StudentViewProps> = ({
-  item,
+  item: initialItem,
   isTeacherPreview = false,
   onClosePreview,
   darkMode,
@@ -64,6 +66,79 @@ export const StudentView: React.FC<StudentViewProps> = ({
   fromWorksheet,
   onBackToWorksheet,
 }) => {
+  const [item, setItem] = useState<Lernhilfe>(initialItem);
+  const [isCheckingStatus, setIsCheckingStatus] = useState<boolean>(false);
+  const [lastCheckedNotice, setLastCheckedNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setItem(initialItem);
+  }, [initialItem]);
+
+  // Automated heartbeat polling & realtime unlock detection
+  useEffect(() => {
+    if (!item.is_locked || isTeacherPreview) return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const fetched = await fetchLernhilfeById(item.id);
+        if (fetched && isMounted) {
+          if (!fetched.is_locked) {
+            confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
+          }
+          setItem(fetched);
+        }
+      } catch (e) {}
+    }, 2000);
+
+    const handleSync = async () => {
+      try {
+        const fetched = await fetchLernhilfeById(item.id);
+        if (fetched && isMounted) {
+          if (item.is_locked && !fetched.is_locked) {
+            confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
+          }
+          setItem(fetched);
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('app-items-updated', handleSync);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('app-items-updated', handleSync);
+    };
+  }, [item.id, item.is_locked, isTeacherPreview]);
+
+  const handleCheckUnlockStatus = async () => {
+    setIsCheckingStatus(true);
+    try {
+      const fetched = await fetchLernhilfeById(item.id);
+      if (fetched) {
+        if (!fetched.is_locked) {
+          confetti({ particleCount: 80, spread: 80, origin: { y: 0.6 } });
+          setItem(fetched);
+        } else {
+          setLastCheckedNotice('Noch nicht freigeschaltet – bitte warte kurz auf deine Lehrkraft.');
+          setTimeout(() => setLastCheckedNotice(null), 3500);
+        }
+      }
+    } catch {
+      setLastCheckedNotice('Verbindung wird geprüft...');
+      setTimeout(() => setLastCheckedNotice(null), 2500);
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  const handleTeacherUnlockNow = async () => {
+    const unlocked = { ...item, is_locked: false, updated_at: new Date().toISOString() };
+    setItem(unlocked);
+    await saveLernhilfe(unlocked);
+  };
+
   // Revealed hints count.
   // If item.disclosure_mode === 'all_visible', all hints are directly visible (collapsed).
   // Otherwise, stepped progressive disclosure starting at 1.
@@ -932,8 +1007,153 @@ export const StudentView: React.FC<StudentViewProps> = ({
     </div>
   );
 
+  // If item is locked and pupil opens it (not in teacher preview), show the waiting screen
+  if (item.is_locked && !isTeacherPreview) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 no-print">
+          <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+            {fromWorksheet && onBackToWorksheet ? (
+              <button
+                type="button"
+                onClick={onBackToWorksheet}
+                className="text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span className="truncate max-w-[150px] sm:max-w-xs">{fromWorksheet}</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  <QrCode className="w-4 h-4" />
+                </div>
+                <span className="font-bold text-sm tracking-tight">QR-Lernhilfen</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 text-[11px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-200 rounded-lg border border-amber-300 dark:border-amber-700/80 flex items-center gap-1.5 shadow-2xs">
+                <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                <span>Wartemodus</span>
+              </span>
+
+              {onToggleDarkMode && (
+                <button
+                  type="button"
+                  onClick={onToggleDarkMode}
+                  title={darkMode ? 'Heller Modus' : 'Dunkler Modus'}
+                  className="p-2 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+                </button>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Center Content */}
+        <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-8 sm:py-12 flex flex-col items-center justify-center text-center space-y-6">
+          {/* Animated Lock Badge */}
+          <div className="relative">
+            <div className="w-20 h-20 rounded-3xl bg-amber-100 dark:bg-amber-950/70 border-2 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 flex items-center justify-center shadow-lg shadow-amber-500/10 animate-pulse">
+              <Lock className="w-10 h-10" />
+            </div>
+            <span className="absolute -top-1 -right-1 flex h-4 w-4">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+            </span>
+          </div>
+
+          <div className="space-y-2 max-w-lg">
+            <div className="flex items-center justify-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 flex-wrap">
+              <span>{item.subject || 'Lernhilfe'}</span>
+              {item.grade_level && <span>· {item.grade_level}</span>}
+              {item.group_name && <span>· 📋 {item.group_name}</span>}
+            </div>
+
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight leading-snug">
+              {item.title}
+            </h1>
+
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              Deine Lehrkraft hat diese gestuften Hilfen noch nicht freigegeben, damit alle Schüler:innen zeitgleich und fair starten können.
+            </p>
+          </div>
+
+          {/* Task context preview so pupil can work on task on paper while waiting */}
+          {item.task_context && (
+            <div className="w-full text-left bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <span>Deine Aufgabenstellung:</span>
+                <span className="text-indigo-600 dark:text-indigo-400 font-semibold lowercase">Schon mal durchlesen &amp; nachdenken</span>
+              </div>
+              <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                <LaTeXRenderer content={item.task_context} glossary={item.glossary} />
+              </div>
+            </div>
+          )}
+
+          {/* Live Sync Status & Check Button */}
+          <div className="w-full max-w-md bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-center gap-2 text-xs text-amber-900 dark:text-amber-200 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping shrink-0" />
+              <span>Warten auf Startsignal der Lehrkraft...</span>
+            </div>
+            <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 leading-snug">
+              Sobald deine Lehrkraft den Startknopf drückt, schaltet dein Bildschirm <strong>automatisch</strong> um und enthüllt die gestuften Tipps!
+            </p>
+
+            <div className="pt-1 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={handleCheckUnlockStatus}
+                disabled={isCheckingStatus}
+                className="w-full sm:w-auto px-4 py-2 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-2xs cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+                <span>{isCheckingStatus ? 'Prüfe Freischaltung...' : 'Freischaltung jetzt prüfen'}</span>
+              </button>
+            </div>
+
+            {lastCheckedNotice && (
+              <p className="text-[11px] font-bold text-amber-700 dark:text-amber-300 animate-in fade-in">
+                {lastCheckedNotice}
+              </p>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 py-3 sm:py-6 lg:py-8 px-3 sm:px-6 lg:px-8">
+      {/* Teacher Preview Lock Banner (allows teacher to view locked item and unlock with 1 click) */}
+      {isTeacherPreview && item.is_locked && (
+        <div className={`mx-auto mb-3 p-3 bg-amber-500 text-slate-950 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md ${desktopLayout === 'split' ? 'max-w-6xl xl:max-w-7xl' : 'max-w-3xl'}`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Lock className="w-5 h-5 text-slate-950 shrink-0" />
+            <div>
+              <span className="font-extrabold text-xs block">
+                Lehrkraft-Vorschau: Diese Lernhilfe ist aktuell für Schüler:innen GESPERRT
+              </span>
+              <span className="text-[11px] text-slate-900/80 block">
+                Schüler sehen derzeit den Wartebildschirm, bis du das Startsignal gibst.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleTeacherUnlockNow}
+            className="px-3.5 py-1.5 bg-slate-950 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs self-start sm:self-auto"
+          >
+            <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Jetzt für Schüler freischalten</span>
+          </button>
+        </div>
+      )}
+
       {/* Top Navigation Bar / Controls */}
       <div className={`mx-auto mb-4 sm:mb-6 ${desktopLayout === 'split' ? 'max-w-6xl xl:max-w-7xl' : 'max-w-3xl'}`}>
         <div className="flex items-center justify-between no-print gap-2 py-1">

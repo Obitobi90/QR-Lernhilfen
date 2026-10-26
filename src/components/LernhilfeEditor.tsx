@@ -127,6 +127,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
   const [disclosureMode, setDisclosureMode] = useState<DisclosureMode>(
     initialItem?.disclosure_mode || 'stepped'
   );
+  const [isLocked, setIsLocked] = useState<boolean>(initialItem?.is_locked ?? false);
 
   // Glossary / Fachbegriffe state
   const [glossary, setGlossary] = useState<Record<string, string>>(initialItem?.glossary || {});
@@ -702,6 +703,7 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
       task_context: taskContext.trim(),
       task_image: taskImage,
       disclosure_mode: disclosureMode,
+      is_locked: isLocked,
       hints,
       glossary: Object.keys(glossary).length > 0 ? glossary : undefined,
       qr_design: hasCustomQrDesign ? qrDesign : undefined,
@@ -1392,6 +1394,45 @@ export const LernhilfeEditor: React.FC<LernhilfeEditorProps> = ({
                   }`}
                 >
                   Alle Tipps direkt sichtbar
+                </button>
+              </div>
+            </div>
+
+            {/* Initial Lock / Waiting screen state */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Start-Freigabe für Schüler:innen:</span>
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 block">
+                  {!isLocked
+                    ? '✅ Sofort freigeschaltet: Schüler können die Tipps nach dem Scannen sofort ansehen (Standard).'
+                    : '🔒 Vorab gesperrt: Schüler sehen nach dem Scannen einen Wartebildschirm, bis du das Startsignal gibst.'}
+                </span>
+              </div>
+              <div className="flex items-center bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-300 dark:border-slate-700 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsLocked(false)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    !isLocked
+                      ? 'bg-emerald-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Sofort freigeschaltet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLocked(true)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                    isLocked
+                      ? 'bg-amber-600 text-white shadow-2xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  Vorab gesperrt
                 </button>
               </div>
             </div>

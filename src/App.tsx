@@ -496,6 +496,62 @@ export default function App() {
     }
   };
 
+  const handleToggleLockLernhilfe = async (item: Lernhilfe) => {
+    const nextLocked = !item.is_locked;
+    const updated: Lernhilfe = {
+      ...item,
+      is_locked: nextLocked,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Optimistically update local state immediately
+    setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+    if (studentItem && studentItem.id === item.id) {
+      setStudentItem(updated);
+    }
+
+    if (nextLocked) {
+      showToast(`„${item.title}“ ist jetzt für Schüler gesperrt (Wartemodus).`, 'info');
+    } else {
+      showToast(`„${item.title}“ für alle Schüler freigeschaltet!`, 'success');
+    }
+
+    try {
+      await saveLernhilfe(updated);
+    } catch (e) {
+      console.error('Toggle lock failed:', e);
+      showToast('Fehler beim Aktualisieren des Freigabe-Status.', 'error');
+    }
+  };
+
+  const handleToggleGroupLock = async (groupName: string, lockStatus: boolean) => {
+    const itemsInGroup = items.filter((i) => i.group_name === groupName);
+    if (itemsInGroup.length === 0) return;
+
+    const updatedItems = itemsInGroup.map((it) => ({
+      ...it,
+      is_locked: lockStatus,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const updateMap = new Map<string, Lernhilfe>(updatedItems.map((i) => [i.id, i]));
+    setItems((prev) => prev.map((i) => (updateMap.has(i.id) ? updateMap.get(i.id)! : i)));
+
+    if (lockStatus) {
+      showToast(`Alle ${itemsInGroup.length} Aufgaben von „${groupName}“ gesperrt (Wartemodus aktiv).`, 'info');
+    } else {
+      showToast(`Alle ${itemsInGroup.length} Aufgaben von „${groupName}“ für Schüler freigeschaltet!`, 'success');
+    }
+
+    for (const it of updatedItems) {
+      try {
+        await saveLernhilfe(it);
+      } catch (e) {
+        console.error('Failed to update lock for group item:', it.id, e);
+      }
+    }
+  };
+
   const handleImportBatch = async (newItems: Lernhilfe[]) => {
     for (const it of newItems) {
       await saveLernhilfe(it);
@@ -766,6 +822,8 @@ export default function App() {
             onOpenSettings={() => setIsSettingsOpen(true)}
             onUngroupWorksheet={handleUngroupWorksheet}
             onDeleteWorksheet={handleDeleteWorksheet}
+            onToggleLock={handleToggleLockLernhilfe}
+            onToggleGroupLock={handleToggleGroupLock}
             isSupabaseEnabled={isSupabaseEnabled}
           />
         )}
