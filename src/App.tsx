@@ -4,6 +4,7 @@ import {
   fetchLernhilfen,
   fetchLernhilfeById,
   saveLernhilfe,
+  saveLernhilfenBatch,
   deleteLernhilfe,
   getSupabaseSettings,
   getSupabaseClient,
@@ -313,8 +314,8 @@ export default function App() {
       if (document.visibilityState === 'visible') {
         fetchLernhilfen().then((updated) => {
           setItems((prev) => {
-            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}`).join('|');
-            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}:${x.is_locked}`).join('|');
+            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}:${x.is_locked}`).join('|');
             return prevHash !== nextHash ? updated : prev;
           });
         }).catch(() => {});
@@ -336,8 +337,8 @@ export default function App() {
       if (document.visibilityState === 'visible' && !isCreatingNew && !editingItem) {
         fetchLernhilfen().then((updated) => {
           setItems((prev) => {
-            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}`).join('|');
-            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}`).join('|');
+            const prevHash = prev.map((x) => `${x.id}:${x.updated_at}:${x.is_locked}`).join('|');
+            const nextHash = updated.map((x) => `${x.id}:${x.updated_at}:${x.is_locked}`).join('|');
             return prevHash !== nextHash ? updated : prev;
           });
         }).catch(() => {});
@@ -528,10 +529,11 @@ export default function App() {
     const itemsInGroup = items.filter((i) => i.group_name === groupName);
     if (itemsInGroup.length === 0) return;
 
+    const nowIso = new Date().toISOString();
     const updatedItems = itemsInGroup.map((it) => ({
       ...it,
       is_locked: lockStatus,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     }));
 
     const updateMap = new Map<string, Lernhilfe>(updatedItems.map((i) => [i.id, i]));
@@ -543,12 +545,11 @@ export default function App() {
       showToast(`Alle ${itemsInGroup.length} Aufgaben von „${groupName}“ für Schüler freigeschaltet!`, 'success');
     }
 
-    for (const it of updatedItems) {
-      try {
-        await saveLernhilfe(it);
-      } catch (e) {
-        console.error('Failed to update lock for group item:', it.id, e);
-      }
+    try {
+      await saveLernhilfenBatch(updatedItems);
+    } catch (e) {
+      console.error('Failed to update lock for group items:', e);
+      showToast('Fehler beim Aktualisieren des Freigabe-Status.', 'error');
     }
   };
 

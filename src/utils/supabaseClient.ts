@@ -523,35 +523,57 @@ export async function fetchLernhilfen(): Promise<Lernhilfe[]> {
             // Skip if item is marked deleted
             if (deletedIds.has(cleanId)) return;
 
+            const existing = mergedMap.get(cleanId);
+
+            // Determine is_locked accurately:
+            // 1. Column is_locked in row (if column exists and defined)
+            // 2. Embedded in qr_design.is_locked (for tables where is_locked column has not been added yet)
+            // 3. Existing local item state (if cloud has neither column nor embedded flag)
+            let isLockedVal = false;
+            if (row.is_locked !== undefined && row.is_locked !== null) {
+              isLockedVal = row.is_locked === true;
+            } else if (row.qr_design && typeof row.qr_design === 'object' && 'is_locked' in row.qr_design) {
+              isLockedVal = row.qr_design.is_locked === true;
+            } else if (existing && existing.is_locked !== undefined) {
+              isLockedVal = existing.is_locked === true;
+            }
+
             const cloudItem: Lernhilfe = {
               id: cleanId,
-              title: row.title || 'Ohne Titel',
-              subject: row.subject || 'Allgemein',
-              grade_level: row.grade_level || undefined,
-              group_name: row.group_name || undefined,
-              task_context: row.task_context || '',
-              task_image: row.task_image || undefined,
-              disclosure_mode: row.disclosure_mode || 'stepped',
-              is_locked: row.is_locked === true,
-              hints: Array.isArray(row.hints) ? row.hints : [],
-              qr_design: row.qr_design || undefined,
-              glossary: row.glossary || undefined,
-              created_at: row.created_at || new Date().toISOString(),
-              updated_at: row.updated_at || new Date().toISOString(),
+              title: row.title || (existing?.title ?? 'Ohne Titel'),
+              subject: row.subject || (existing?.subject ?? 'Allgemein'),
+              grade_level: row.grade_level || existing?.grade_level || undefined,
+              group_name: row.group_name || existing?.group_name || undefined,
+              task_context: row.task_context ?? (existing?.task_context ?? ''),
+              task_image: row.task_image || existing?.task_image || undefined,
+              disclosure_mode: row.disclosure_mode || existing?.disclosure_mode || 'stepped',
+              is_locked: isLockedVal,
+              hints: Array.isArray(row.hints) ? row.hints : (existing?.hints ?? []),
+              qr_design: row.qr_design || existing?.qr_design || undefined,
+              glossary: row.glossary || existing?.glossary || undefined,
+              created_at: row.created_at || existing?.created_at || new Date().toISOString(),
+              updated_at: row.updated_at || row.created_at || existing?.updated_at || new Date(0).toISOString(),
             };
 
-            const existing = mergedMap.get(cleanId);
             if (!existing) {
               mergedMap.set(cleanId, cloudItem);
             } else {
-              const cloudTime = new Date(cloudItem.updated_at || cloudItem.created_at || 0).getTime();
+              // Compare timestamps safely. Only overwrite if row has explicit newer updated_at timestamp.
+              // If row has no updated_at column, do not use synthetic Date.now() that overwrites fresh local actions!
+              const cloudTime = new Date(row.updated_at || row.created_at || 0).getTime();
               const curTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
               if (cloudTime >= curTime) {
-                // Preserve local glossary if cloud column is null or not yet migrated
+                // Preserve local extensions if cloud table lacks columns
                 const preservedGlossary = cloudItem.glossary || existing.glossary;
                 mergedMap.set(cleanId, {
                   ...cloudItem,
                   glossary: preservedGlossary,
+                  is_locked: isLockedVal,
+                });
+              } else {
+                mergedMap.set(cleanId, {
+                  ...existing,
+                  is_locked: existing.is_locked ?? isLockedVal,
                 });
               }
             }
@@ -617,21 +639,31 @@ export async function fetchLernhilfeById(id: string): Promise<Lernhilfe | null> 
         .maybeSingle();
 
       if (!error && data) {
+        const localCached = localItems.find((x) => String(x.id).trim() === id);
+        let isLockedVal = false;
+        if (data.is_locked !== undefined && data.is_locked !== null) {
+          isLockedVal = data.is_locked === true;
+        } else if (data.qr_design && typeof data.qr_design === 'object' && 'is_locked' in data.qr_design) {
+          isLockedVal = data.qr_design.is_locked === true;
+        } else if (localCached && localCached.is_locked !== undefined) {
+          isLockedVal = localCached.is_locked === true;
+        }
+
         const item: Lernhilfe = {
           id: String(data.id),
-          title: data.title || '',
-          subject: data.subject || '',
-          grade_level: data.grade_level || undefined,
-          group_name: data.group_name || undefined,
-          task_context: data.task_context || '',
-          task_image: data.task_image || undefined,
-          disclosure_mode: data.disclosure_mode || 'stepped',
-          is_locked: data.is_locked === true,
-          hints: Array.isArray(data.hints) ? data.hints : [],
-          qr_design: data.qr_design || undefined,
-          glossary: data.glossary || localItems.find((x) => String(x.id).trim() === id)?.glossary || undefined,
-          created_at: data.created_at || new Date().toISOString(),
-          updated_at: data.updated_at || new Date().toISOString(),
+          title: data.title || localCached?.title || '',
+          subject: data.subject || localCached?.subject || '',
+          grade_level: data.grade_level || localCached?.grade_level || undefined,
+          group_name: data.group_name || localCached?.group_name || undefined,
+          task_context: data.task_context ?? localCached?.task_context ?? '',
+          task_image: data.task_image || localCached?.task_image || undefined,
+          disclosure_mode: data.disclosure_mode || localCached?.disclosure_mode || 'stepped',
+          is_locked: isLockedVal,
+          hints: Array.isArray(data.hints) ? data.hints : (localCached?.hints || []),
+          qr_design: data.qr_design || localCached?.qr_design || undefined,
+          glossary: data.glossary || localCached?.glossary || undefined,
+          created_at: data.created_at || localCached?.created_at || new Date().toISOString(),
+          updated_at: data.updated_at || data.created_at || localCached?.updated_at || new Date(0).toISOString(),
         };
         // Cache locally
         saveLocalLernhilfen([item, ...localItems.filter((x) => x.id !== id)]);
@@ -691,6 +723,11 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
   const supabase = getSupabaseClient();
   if (settings.enabled && supabase) {
     try {
+      const qrDesign: Record<string, any> = (updatedItem.qr_design && typeof updatedItem.qr_design === 'object')
+        ? { ...updatedItem.qr_design }
+        : {};
+      qrDesign.is_locked = updatedItem.is_locked === true;
+
       const basePayload: Record<string, any> = {
         id: updatedItem.id,
         title: updatedItem.title,
@@ -702,7 +739,7 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
         disclosure_mode: updatedItem.disclosure_mode || 'stepped',
         is_locked: updatedItem.is_locked === true,
         hints: updatedItem.hints || [],
-        qr_design: updatedItem.qr_design || null,
+        qr_design: qrDesign,
         glossary: updatedItem.glossary || null,
         updated_at: updatedItem.updated_at,
       };
@@ -817,6 +854,119 @@ export async function saveLernhilfe(item: Lernhilfe): Promise<Lernhilfe> {
 
   notifySyncChange();
   return updatedItem;
+}
+
+export async function saveLernhilfenBatch(items: Lernhilfe[]): Promise<Lernhilfe[]> {
+  if (!items || items.length === 0) return [];
+
+  const nowIso = new Date().toISOString();
+  const updatedItems = items.map((item) => {
+    const cleanId = String(item.id).trim();
+    unmarkDeletedId(cleanId);
+    return {
+      ...item,
+      id: cleanId,
+      updated_at: item.updated_at || nowIso,
+    };
+  });
+
+  // 1. Update localStorage immediately in one batch
+  const localItems = getLocalLernhilfen();
+  const itemMap = new Map<string, Lernhilfe>(localItems.map((x) => [String(x.id).trim(), x]));
+  for (const it of updatedItems) {
+    itemMap.set(it.id, it);
+  }
+  const mergedLocal = Array.from(itemMap.values());
+  saveLocalLernhilfen(mergedLocal);
+
+  // 2. Sync to server disk store (/api/lernhilfen) in one batch
+  try {
+    await fetch('/api/lernhilfen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batch: updatedItems }),
+    });
+  } catch (e) {
+    console.warn('Could not sync batch to server disk store:', e);
+  }
+
+  // 3. Sync to Supabase in one batch if enabled
+  const settings = getSupabaseSettings();
+  const supabase = getSupabaseClient();
+  if (settings.enabled && supabase) {
+    try {
+      const payloads = updatedItems.map((it) => {
+        const qrDesign: Record<string, any> = (it.qr_design && typeof it.qr_design === 'object') ? { ...it.qr_design } : {};
+        qrDesign.is_locked = it.is_locked === true;
+
+        return {
+          id: it.id,
+          title: it.title,
+          subject: it.subject || 'Allgemein',
+          grade_level: it.grade_level || null,
+          group_name: it.group_name || null,
+          task_context: it.task_context || '',
+          task_image: it.task_image || null,
+          disclosure_mode: it.disclosure_mode || 'stepped',
+          is_locked: it.is_locked === true,
+          hints: it.hints || [],
+          qr_design: qrDesign,
+          glossary: it.glossary || null,
+          updated_at: it.updated_at,
+        };
+      });
+
+      let activePayloads = payloads.map((p) => ({ ...p }));
+      const strippedColumns: string[] = [];
+
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const { error } = await supabase.from('lernhilfen').upsert(activePayloads);
+        if (!error) break;
+
+        const colMatch =
+          error.message?.match(/Could not find the '([^']+)' column/i) ||
+          error.message?.match(/column '([^']+)' of/i) ||
+          error.message?.match(/column "([^"]+)" does not exist/i);
+
+        const detectedCol = colMatch ? colMatch[1] : null;
+        if (detectedCol) {
+          strippedColumns.push(detectedCol);
+          activePayloads = activePayloads.map((p: any) => {
+            const copy = { ...p };
+            delete copy[detectedCol];
+            return copy;
+          });
+          continue;
+        }
+
+        if (error.code === 'PGRST204' || (error.message && error.message.toLowerCase().includes('column'))) {
+          const fallbackCandidates = ['is_locked', 'disclosure_mode', 'qr_design', 'task_image', 'group_name', 'grade_level'];
+          let dropped = false;
+          for (const cand of fallbackCandidates) {
+            if (!strippedColumns.includes(cand)) {
+              strippedColumns.push(cand);
+              activePayloads = activePayloads.map((p: any) => {
+                const copy = { ...p };
+                delete copy[cand];
+                return copy;
+              });
+              dropped = true;
+              break;
+            }
+          }
+          if (dropped) continue;
+        }
+
+        break;
+      }
+    } catch (e) {
+      console.warn('Batch Supabase upsert error:', e);
+    }
+  }
+
+  // 4. Notify all sync subscribers exactly once!
+  notifySyncChange();
+  return updatedItems;
 }
 
 export async function deleteLernhilfe(id: string): Promise<void> {
