@@ -18,6 +18,8 @@ import {
   HelpCircle,
   ArrowLeft,
   CheckCircle2,
+  Eye,
+  X,
 } from 'lucide-react';
 
 interface WorksheetStudentPortalProps {
@@ -79,20 +81,39 @@ export const WorksheetStudentPortal: React.FC<WorksheetStudentPortalProps> = ({
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col">
       {/* Teacher Preview Banner (if active) */}
       {isTeacherPreview && (
-        <div className="bg-indigo-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between no-print z-50">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Vorschau-Modus: So sehen deine Schüler das Arbeitsblatt-Menü beim Scannen des Master-QR-Codes</span>
+        <div className="bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 text-white border-b border-indigo-500/40 shadow-xs no-print z-50">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-2.5 sm:py-3 flex items-center justify-between gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 shadow-2xs">
+                <Eye className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-extrabold tracking-tight text-white">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span>Vorschau-Modus</span>
+                  </span>
+                  <span className="hidden sm:inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md bg-white/15 text-indigo-100">
+                    Schüler-Ansicht
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-indigo-100 font-medium leading-snug line-clamp-2 sm:line-clamp-1 mt-0.5">
+                  So sehen deine Schüler das Arbeitsblatt-Menü nach dem Scannen des Master-QR-Codes.
+                </p>
+              </div>
+            </div>
+
+            {onClosePreview && (
+              <button
+                type="button"
+                onClick={onClosePreview}
+                className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 bg-white text-indigo-700 hover:bg-indigo-50 active:scale-95 rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span>Vorschau beenden</span>
+              </button>
+            )}
           </div>
-          {onClosePreview && (
-            <button
-              type="button"
-              onClick={onClosePreview}
-              className="px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-white font-bold text-[11px] transition"
-            >
-              Vorschau beenden
-            </button>
-          )}
         </div>
       )}
 
