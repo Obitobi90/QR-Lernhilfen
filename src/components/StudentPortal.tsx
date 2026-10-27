@@ -60,6 +60,43 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
   const [enrollLoading, setEnrollLoading] = useState<boolean>(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
 
+  // Sync StudentPortal modals with Smartphone Back Button
+  const hasPortalModal = Boolean(showTeacherPinModal || showEnrollOfferModal);
+  const closedPortalModalByPopRef = React.useRef(false);
+
+  useEffect(() => {
+    if (hasPortalModal) {
+      if (window.history.state?.appSubOverlay !== 'portal') {
+        window.history.pushState({ ...window.history.state, appSubOverlay: 'portal' }, '', window.location.href);
+      }
+    } else {
+      if (!closedPortalModalByPopRef.current && window.history.state?.appSubOverlay === 'portal') {
+        (window as any).__ignoreNextPopState = true;
+        window.history.back();
+      }
+      closedPortalModalByPopRef.current = false;
+    }
+  }, [hasPortalModal]);
+
+  useEffect(() => {
+    (window as any).__closePortalModal = () => {
+      if (showEnrollOfferModal) {
+        closedPortalModalByPopRef.current = true;
+        setShowEnrollOfferModal(false);
+        return true;
+      }
+      if (showTeacherPinModal) {
+        closedPortalModalByPopRef.current = true;
+        setShowTeacherPinModal(false);
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      delete (window as any).__closePortalModal;
+    };
+  }, [showTeacherPinModal, showEnrollOfferModal]);
+
   useEffect(() => {
     setDeviceLabel(getBiometricDeviceLabel());
     setPasskeyEnrolled(isPasskeyEnrolled());

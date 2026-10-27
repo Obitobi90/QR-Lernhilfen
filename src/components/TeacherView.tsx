@@ -90,6 +90,53 @@ export const TeacherView: React.FC<TeacherViewProps> = ({
   const [groupToUngroup, setGroupToUngroup] = useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = useState<{ name: string; items: Lernhilfe[] } | null>(null);
 
+  // Sync TeacherView confirmation dialogs with Smartphone Back Button
+  const hasTeacherDialog = Boolean(itemToDelete || groupToRename || groupToUngroup || groupToDelete);
+  const closedTeacherDialogByPopRef = React.useRef(false);
+
+  useEffect(() => {
+    if (hasTeacherDialog) {
+      if (window.history.state?.appSubOverlay !== 'teacher') {
+        window.history.pushState({ ...window.history.state, appSubOverlay: 'teacher' }, '', window.location.href);
+      }
+    } else {
+      if (!closedTeacherDialogByPopRef.current && window.history.state?.appSubOverlay === 'teacher') {
+        (window as any).__ignoreNextPopState = true;
+        window.history.back();
+      }
+      closedTeacherDialogByPopRef.current = false;
+    }
+  }, [hasTeacherDialog]);
+
+  useEffect(() => {
+    (window as any).__closeTeacherDialog = () => {
+      if (itemToDelete) {
+        closedTeacherDialogByPopRef.current = true;
+        setItemToDelete(null);
+        return true;
+      }
+      if (groupToRename) {
+        closedTeacherDialogByPopRef.current = true;
+        setGroupToRename(null);
+        return true;
+      }
+      if (groupToUngroup) {
+        closedTeacherDialogByPopRef.current = true;
+        setGroupToUngroup(null);
+        return true;
+      }
+      if (groupToDelete) {
+        closedTeacherDialogByPopRef.current = true;
+        setGroupToDelete(null);
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      delete (window as any).__closeTeacherDialog;
+    };
+  }, [itemToDelete, groupToRename, groupToUngroup, groupToDelete]);
+
   const handleDuplicate = async (item: Lernhilfe) => {
     try {
       setDuplicatingId(item.id);

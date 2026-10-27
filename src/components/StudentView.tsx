@@ -201,6 +201,48 @@ export const StudentView: React.FC<StudentViewProps> = ({
     definition: string;
   } | null>(null);
 
+  // Sync StudentView overlays (Lightbox, GeoGebra Modal, Glossary Popover) with Smartphone Back Button
+  const hasStudentOverlay = Boolean(lightboxImage || geoGebraModal || activeGlossaryTerm);
+  const closedStudentOverlayByPopRef = React.useRef(false);
+
+  useEffect(() => {
+    if (hasStudentOverlay) {
+      if (window.history.state?.appSubOverlay !== 'student') {
+        window.history.pushState({ ...window.history.state, appSubOverlay: 'student' }, '', window.location.href);
+      }
+    } else {
+      if (!closedStudentOverlayByPopRef.current && window.history.state?.appSubOverlay === 'student') {
+        (window as any).__ignoreNextPopState = true;
+        window.history.back();
+      }
+      closedStudentOverlayByPopRef.current = false;
+    }
+  }, [hasStudentOverlay]);
+
+  useEffect(() => {
+    (window as any).__closeStudentOverlay = () => {
+      if (lightboxImage) {
+        closedStudentOverlayByPopRef.current = true;
+        setLightboxImage(null);
+        return true;
+      }
+      if (geoGebraModal) {
+        closedStudentOverlayByPopRef.current = true;
+        setGeoGebraModal(null);
+        return true;
+      }
+      if (activeGlossaryTerm) {
+        closedStudentOverlayByPopRef.current = true;
+        setActiveGlossaryTerm(null);
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      delete (window as any).__closeStudentOverlay;
+    };
+  }, [lightboxImage, geoGebraModal, activeGlossaryTerm]);
+
   // Reset states and record views if item changes
   useEffect(() => {
     setUnlockedCount(item.disclosure_mode === 'all_visible' ? item.hints.length : 1);

@@ -238,10 +238,172 @@ export default function App() {
     }
   };
 
+  // Keep latest overlay/modal/editor states in a ref for synchronous access inside popstate listener
+  const overlayStateRef = React.useRef({
+    isTransferOpen,
+    isSettingsOpen,
+    qrModalItem,
+    worksheetQrModal,
+    statsModalItem,
+    isCreatingNew,
+    editingItem,
+    studentId,
+    studentWorksheet,
+  });
+
   useEffect(() => {
+    overlayStateRef.current = {
+      isTransferOpen,
+      isSettingsOpen,
+      qrModalItem,
+      worksheetQrModal,
+      statsModalItem,
+      isCreatingNew,
+      editingItem,
+      studentId,
+      studentWorksheet,
+    };
+  }, [
+    isTransferOpen,
+    isSettingsOpen,
+    qrModalItem,
+    worksheetQrModal,
+    statsModalItem,
+    isCreatingNew,
+    editingItem,
+    studentId,
+    studentWorksheet,
+  ]);
+
+  const closedByPopStateRef = React.useRef(false);
+  const prevOverlayDepthRef = React.useRef(0);
+  const lastRootBackPressRef = React.useRef(0);
+
+  // Track depth of open modals / editor so opening & closing pushes/pops history cleanly
+  const currentOverlayDepth =
+    (isCreatingNew || editingItem ? 1 : 0) +
+    (qrModalItem || worksheetQrModal || statsModalItem || isSettingsOpen ? 1 : 0) +
+    (isTransferOpen ? 1 : 0);
+
+  useEffect(() => {
+    const prevDepth = prevOverlayDepthRef.current;
+    if (currentOverlayDepth > prevDepth) {
+      // A modal or editor was opened -> push history state so Smartphone Back button closes it
+      const diff = currentOverlayDepth - prevDepth;
+      for (let i = 0; i < diff; i++) {
+        window.history.pushState(
+          { ...window.history.state, appOverlayDepth: prevDepth + i + 1 },
+          '',
+          window.location.href
+        );
+      }
+    } else if (currentOverlayDepth < prevDepth) {
+      // A modal or editor was closed
+      if (!closedByPopStateRef.current && (window.history.state?.appOverlayDepth || 0) > currentOverlayDepth) {
+        (window as any).__ignoreNextPopState = true;
+        window.history.back();
+      }
+      closedByPopStateRef.current = false;
+    }
+    prevOverlayDepthRef.current = currentOverlayDepth;
+  }, [currentOverlayDepth]);
+
+  useEffect(() => {
+    // Seed initial history stack so scanning a QR code or launching the PWA never closes the app on first Back press
+    const params = new URLSearchParams(window.location.search);
+    const idParam = params.get('id');
+    const sheetParam = params.get('sheet') || params.get('worksheet');
+    const isPrev = params.get('preview') === 'teacher';
+    const hasImport = params.has('importId') || params.has('importPayload');
+
+    if (!hasImport && !window.history.state?.appInitialized) {
+      const currentFullUrl = window.location.pathname + window.location.search;
+      // 1. Base root guard at the bottom of the stack
+      window.history.replaceState({ appInitialized: true, appRoot: true }, '', window.location.pathname);
+      // 2. Active root page (Overview / Portal)
+      window.history.pushState({ appInitialized: true, appRootGuard: true }, '', window.location.pathname);
+
+      // 3. If user opened a deep link directly (e.g. via QR code scan), insert parent route(s) underneath
+      if (sheetParam && idParam) {
+        const sheetUrl = `${window.location.pathname}?sheet=${encodeURIComponent(sheetParam)}${
+          isPrev ? '&preview=teacher' : ''
+        }`;
+        window.history.pushState({ appInitialized: true, fromAppNav: true }, '', sheetUrl);
+        window.history.pushState({ appInitialized: true, fromAppNav: true }, '', currentFullUrl);
+      } else if (idParam || sheetParam) {
+        window.history.pushState({ appInitialized: true, fromAppNav: true }, '', currentFullUrl);
+      }
+    }
+
     syncFromUrl();
 
-    const handlePopState = () => {
+    const handlePopState = (event: PopStateEvent) => {
+      if ((window as any).__ignoreNextPopState) {
+        (window as any).__ignoreNextPopState = false;
+        return;
+      }
+
+      // 1. Check if a child view overlay (Lightbox, GeoGebra, Glossary, Confirmation Dialog, PIN Modal) is open
+      if ((window as any).__closeStudentOverlay?.()) {
+        return;
+      }
+      if ((window as any).__closeTeacherDialog?.()) {
+        return;
+      }
+      if ((window as any).__closePortalModal?.()) {
+        return;
+      }
+
+      // 2. Check if any App-level modal or editor is open (close topmost layer first)
+      const st = overlayStateRef.current;
+      if (st.isTransferOpen) {
+        closedByPopStateRef.current = true;
+        setIsTransferOpen(false);
+        return;
+      }
+      if (st.isSettingsOpen) {
+        closedByPopStateRef.current = true;
+        setIsSettingsOpen(false);
+        return;
+      }
+      if (st.qrModalItem) {
+        closedByPopStateRef.current = true;
+        setQrModalItem(null);
+        return;
+      }
+      if (st.worksheetQrModal) {
+        closedByPopStateRef.current = true;
+        setWorksheetQrModal(null);
+        return;
+      }
+      if (st.statsModalItem) {
+        closedByPopStateRef.current = true;
+        setStatsModalItem(null);
+        return;
+      }
+      if (st.isCreatingNew || st.editingItem) {
+        closedByPopStateRef.current = true;
+        setIsCreatingNew(false);
+        setEditingItem(null);
+        setGroupPresetForNew(undefined);
+        return;
+      }
+
+      // 3. Root Back-Guard: Prevent accidental single back-swipe from closing the Web App / PWA on root screen
+      if (event.state?.appRoot) {
+        const now = Date.now();
+        if (now - lastRootBackPressRef.current < 2200) {
+          // Pressed Back twice within 2.2s -> allow leaving the app
+          window.history.back();
+          return;
+        }
+        lastRootBackPressRef.current = now;
+        window.history.pushState({ appInitialized: true, appRootGuard: true }, '', window.location.pathname);
+        showToast('Nochmals Zurück tippen, um die App zu verlassen.', 'info');
+        return;
+      }
+
+      // 4. Otherwise sync URL route state (?id=..., ?sheet=..., or /)
       syncFromUrl();
     };
 
@@ -353,7 +515,7 @@ export default function App() {
   const handleOpenStudentView = (id: string) => {
     setIsTeacherPreview(true);
     const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}&preview=teacher`;
-    window.history.pushState({}, '', newUrl);
+    window.history.pushState({ appInitialized: true, fromAppNav: true }, '', newUrl);
     syncFromUrl();
   };
 
@@ -361,7 +523,7 @@ export default function App() {
   const handleOpenStudentDirect = (id: string) => {
     setIsTeacherPreview(false);
     const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}`;
-    window.history.pushState({}, '', newUrl);
+    window.history.pushState({ appInitialized: true, fromAppNav: true }, '', newUrl);
     syncFromUrl();
   };
 
@@ -369,15 +531,19 @@ export default function App() {
   const handleOpenStudentFromWorksheet = (id: string, groupName: string) => {
     const previewSuffix = isTeacherPreview ? '&preview=teacher' : '';
     const newUrl = `${window.location.pathname}?id=${encodeURIComponent(id)}&sheet=${encodeURIComponent(groupName)}${previewSuffix}`;
-    window.history.pushState({}, '', newUrl);
+    window.history.pushState({ appInitialized: true, fromAppNav: true }, '', newUrl);
     syncFromUrl();
   };
 
   // Student Navigation: Return from Task view back to Worksheet Portal
   const handleBackToWorksheet = (groupName: string) => {
+    if (window.history.state?.fromAppNav) {
+      window.history.back();
+      return;
+    }
     const previewSuffix = isTeacherPreview ? '&preview=teacher' : '';
     const newUrl = `${window.location.pathname}?sheet=${encodeURIComponent(groupName)}${previewSuffix}`;
-    window.history.pushState({}, '', newUrl);
+    window.history.replaceState({ appInitialized: true, fromAppNav: true }, '', newUrl);
     syncFromUrl();
   };
 
@@ -386,7 +552,7 @@ export default function App() {
     setWorksheetQrModal(null);
     setIsTeacherPreview(true);
     const newUrl = `${window.location.pathname}?sheet=${encodeURIComponent(groupName)}&preview=teacher`;
-    window.history.pushState({}, '', newUrl);
+    window.history.pushState({ appInitialized: true, fromAppNav: true }, '', newUrl);
     syncFromUrl();
   };
 
@@ -395,7 +561,7 @@ export default function App() {
     setStudentWorksheet(null);
     setStudentId(null);
     setStudentItem(null);
-    window.history.pushState({}, '', window.location.pathname);
+    window.history.replaceState({ appInitialized: true, appRootGuard: true }, '', window.location.pathname);
     syncFromUrl();
   };
 
